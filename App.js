@@ -19,6 +19,7 @@ import WelcomeScreen     from './src/screens/onboarding/WelcomeScreen';
 import UsernameScreen    from './src/screens/onboarding/UsernameScreen';
 import IdentityCreated   from './src/screens/onboarding/IdentityCreated';
 import HomePlaceholder   from './src/screens/home/HomePlaceholder';
+import AddContactScreen  from './src/screens/contacts/AddContactScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -71,7 +72,10 @@ export default function App() {
             </>
           ) : (
             // Main app (Phase 6)
-            <Stack.Screen name="Home" component={HomePlaceholder} />
+            <>
+              <Stack.Screen name="Home"       component={HomePlaceholder} />
+              <Stack.Screen name="AddContact" component={AddContactScreen} />
+            </>
           )}
         </Stack.Navigator>
       </NavigationContainer>

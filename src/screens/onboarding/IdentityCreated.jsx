@@ -4,11 +4,10 @@
  * and sets expectations about how the app works.
  */
 
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import useIdentityStore from '../../store/useIdentityStore';
-
 const { width } = Dimensions.get('window');
 
 function CheckIcon() {
@@ -21,9 +20,9 @@ function CheckIcon() {
   );
 }
 
-export default function IdentityCreated({ navigation }) {
+export default function IdentityCreated() {
   const insets = useSafeAreaInsets();
-  const { username, deviceId, publicKey } = useIdentityStore();
+  const { username, deviceId, publicKey, loadIdentity } = useIdentityStore();
 
   return (
     <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
@@ -76,11 +75,12 @@ export default function IdentityCreated({ navigation }) {
 
         <View style={styles.flex} />
 
-        {/* CTA — navigates to main app (triggers re-render via store) */}
+        {/* CTA — store already has username set, pressing this triggers
+             the conditional render in App.js to switch to Home automatically */}
         <TouchableOpacity
           style={styles.btn}
           activeOpacity={0.85}
-          onPress={() => navigation.replace('Home')}
+          onPress={loadIdentity}
         >
           <LinearGradient
             colors={['#6C63FF', '#A78BFA']}

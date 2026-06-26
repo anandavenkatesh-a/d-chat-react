@@ -38,7 +38,7 @@ export default function UsernameScreen({ navigation }) {
     setError(null);
     try {
       await createIdentity(normalized);
-      navigation.replace('IdentityCreated');
+      navigation.navigate('IdentityCreated');
     } catch (err) {
       setError('Something went wrong. Please try again.');
       setLoading(false);
