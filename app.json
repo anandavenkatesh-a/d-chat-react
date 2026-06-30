@@ -27,7 +27,11 @@
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.INTERNET"
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
@@ -41,6 +45,18 @@
     ],
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c825212f-4f47-4f38-80b0-d0ed5039e49c"
+      }
+    },
+    "owner": "venkii21",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c825212f-4f47-4f38-80b0-d0ed5039e49c"
     }
   }
 }
