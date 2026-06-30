@@ -3,6 +3,11 @@
  * Entry point — initializes DB, loads identity, routes to onboarding or main app.
  */
 
+// MUST be the very first import — patches global.crypto.getRandomValues()
+// which tweetnacl (our E2EE library) requires for secure random number
+// generation. Without this, nacl.randomBytes() throws "no PRNG".
+import 'react-native-get-random-values';
+
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';

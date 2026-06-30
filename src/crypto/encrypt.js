@@ -11,7 +11,7 @@
  */
 
 import nacl from 'tweetnacl';
-import { encodeBase64, decodeBase64, encodeUTF8 } from 'tweetnacl-util';
+import { encodeBase64, decodeUTF8 } from 'tweetnacl-util';
 import { publicKeyToBytes, privateKeyToBytes } from './keyPair';
 
 /**
@@ -23,8 +23,8 @@ import { publicKeyToBytes, privateKeyToBytes } from './keyPair';
  * @returns {string} base64-encoded encrypted payload (safe to send over network)
  */
 export function encryptMessage(plaintext, recipientPublicKey, senderPrivateKey) {
-  const nonce       = nacl.randomBytes(nacl.box.nonceLength);
-  const messageBytes = encodeUTF8(plaintext);
+  const nonce        = new Uint8Array(nacl.randomBytes(nacl.box.nonceLength));
+  const messageBytes  = new Uint8Array(decodeUTF8(plaintext)); // string → Uint8Array
 
   const ciphertext = nacl.box(
     messageBytes,
@@ -39,5 +39,5 @@ export function encryptMessage(plaintext, recipientPublicKey, senderPrivateKey) 
   };
 
   // Encode entire payload as base64 so it's a single opaque string on the wire
-  return encodeBase64(encodeUTF8(JSON.stringify(payload)));
+  return encodeBase64(decodeUTF8(JSON.stringify(payload)));
 }

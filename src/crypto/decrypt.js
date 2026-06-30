@@ -8,7 +8,7 @@
  */
 
 import nacl from 'tweetnacl';
-import { decodeBase64, decodeUTF8 } from 'tweetnacl-util';
+import { decodeBase64, encodeUTF8 } from 'tweetnacl-util';
 import { publicKeyToBytes, privateKeyToBytes } from './keyPair';
 
 /**
@@ -21,20 +21,20 @@ import { publicKeyToBytes, privateKeyToBytes } from './keyPair';
  */
 export function decryptMessage(encryptedPayload, senderPublicKey, recipientPrivateKey) {
   try {
-    // Decode outer base64 → JSON string → parse
-    const payloadJson = decodeUTF8(decodeBase64(encryptedPayload));
+    // Decode outer base64 → bytes → JSON string → parse
+    const payloadJson = encodeUTF8(decodeBase64(encryptedPayload)); // bytes → string
     const { nonce, ciphertext } = JSON.parse(payloadJson);
 
     const decrypted = nacl.box.open(
-      decodeBase64(ciphertext),
-      decodeBase64(nonce),
+      new Uint8Array(decodeBase64(ciphertext)),
+      new Uint8Array(decodeBase64(nonce)),
       publicKeyToBytes(senderPublicKey),
       privateKeyToBytes(recipientPrivateKey),
     );
 
     if (!decrypted) return null; // Authentication failed
 
-    return decodeUTF8(decrypted); // convert Uint8Array → string
+    return encodeUTF8(decrypted); // bytes → string
   } catch {
     return null; // Malformed payload
   }

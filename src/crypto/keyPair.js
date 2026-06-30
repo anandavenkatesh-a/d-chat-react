@@ -52,14 +52,22 @@ export async function deletePrivateKey() {
 
 /**
  * Converts a base64 public key string to a Uint8Array for use with nacl.
+ *
+ * Wrapped in `new Uint8Array(...)` defensively: under React Native's New
+ * Architecture (Hermes + JSI), values crossing certain async boundaries
+ * (SecureStore, SQLite) can occasionally end up as Uint8Array-like objects
+ * that fail tweetnacl's strict `instanceof Uint8Array` check even though
+ * they behave identically. Re-wrapping guarantees a true, freshly
+ * constructed Uint8Array from the current realm.
  */
 export function publicKeyToBytes(publicKeyBase64) {
-  return decodeBase64(publicKeyBase64);
+  return new Uint8Array(decodeBase64(publicKeyBase64));
 }
 
 /**
  * Converts a base64 private key string to a Uint8Array for use with nacl.
+ * See publicKeyToBytes() comment for why the explicit re-wrap is needed.
  */
 export function privateKeyToBytes(privateKeyBase64) {
-  return decodeBase64(privateKeyBase64);
+  return new Uint8Array(decodeBase64(privateKeyBase64));
 }
