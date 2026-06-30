@@ -25,7 +25,7 @@ export default function WelcomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
+    <View style={styles.root}>
       {/* Top section — icon + headline */}
       <View style={[styles.top, { paddingTop: insets.top + 48 }]}>
         <LockIcon />
@@ -66,7 +66,7 @@ export default function WelcomeScreen({ navigation }) {
           </LinearGradient>
         </TouchableOpacity>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 

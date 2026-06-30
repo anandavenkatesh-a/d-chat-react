@@ -5,7 +5,6 @@
  */
 
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useIdentityStore  from '../../store/useIdentityStore';
 import useContactsStore  from '../../store/useContactsStore';
@@ -16,7 +15,7 @@ export default function HomePlaceholder({ navigation }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
+    <View style={styles.root}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <View>
@@ -66,12 +65,12 @@ export default function HomePlaceholder({ navigation }) {
       <Text style={[styles.hint, { paddingBottom: insets.bottom + 12 }]}>
         Full chat UI coming in Phase 6 ✦
       </Text>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root:         { flex: 1 },
+  root: { flex: 1, backgroundColor: '#0D0D0D' },
 
   header:       { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   wordmark:     { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },

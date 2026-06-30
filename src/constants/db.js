@@ -20,7 +20,7 @@ export const SQL_CREATE_CONTACTS = `
   CREATE TABLE IF NOT EXISTS ${TABLES.CONTACTS} (
     device_id   TEXT    PRIMARY KEY,
     username    TEXT    NOT NULL,
-    public_key  TEXT    NOT NULL,
+    public_key  TEXT,
     created_at  INTEGER NOT NULL
   );
 `;

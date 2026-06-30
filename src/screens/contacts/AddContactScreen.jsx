@@ -6,7 +6,6 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import MyQRCode from './MyQRCode';
 import ScanQR   from './ScanQR';
 
@@ -21,7 +20,7 @@ export default function AddContactScreen({ navigation }) {
   }
 
   return (
-    <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
+    <View style={styles.root}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -54,12 +53,12 @@ export default function AddContactScreen({ navigation }) {
           : <ScanQR onContactAdded={handleContactAdded} />
         }
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root:          { flex: 1 },
+  root: { flex: 1, backgroundColor: '#0D0D0D' },
 
   header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 16 },
   backBtn:       { width: 64 },

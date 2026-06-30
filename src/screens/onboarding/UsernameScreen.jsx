@@ -1,31 +1,25 @@
-/**
- * UsernameScreen.jsx
- * User picks a username → keypair is generated → identity is created.
- */
-
 import { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import useIdentityStore from '../../store/useIdentityStore';
 
-const { width } = Dimensions.get('window');
-
 const RULES = [
-  { test: (v) => v.length >= 3,          label: 'At least 3 characters' },
-  { test: (v) => v.length <= 24,         label: 'At most 24 characters' },
+  { test: (v) => v.length >= 3,           label: 'At least 3 characters' },
+  { test: (v) => v.length <= 24,          label: 'At most 24 characters' },
   { test: (v) => /^[a-z0-9_]+$/.test(v), label: 'Lowercase letters, numbers, _ only' },
 ];
 
 export default function UsernameScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { createIdentity } = useIdentityStore();
+  const { createIdentity, loadIdentity } = useIdentityStore();
 
   const [value,   setValue]   = useState('');
   const [loading, setLoading] = useState(false);
+  const [done,    setDone]    = useState(false);
   const [error,   setError]   = useState(null);
 
   const normalized  = value.trim().toLowerCase();
@@ -38,13 +32,41 @@ export default function UsernameScreen({ navigation }) {
     setError(null);
     try {
       await createIdentity(normalized);
-      navigation.navigate('IdentityCreated');
+      setDone(true);
     } catch (err) {
       setError('Something went wrong. Please try again.');
       setLoading(false);
     }
   }
 
+  // ── Success state ──────────────────────────────────────────────────────────
+  if (done) {
+    return (
+      <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
+        <View style={[styles.inner, { paddingTop: insets.top + 80, paddingBottom: insets.bottom + 32 }]}>
+          <View style={styles.successIcon}>
+            <Text style={styles.successTick}>✓</Text>
+          </View>
+          <Text style={styles.successTitle}>You're all set,{'\n'}@{normalized}</Text>
+          <Text style={styles.successSub}>
+            Your encryption keys have been generated and stored securely on this device.
+          </Text>
+          <TouchableOpacity style={styles.btn} activeOpacity={0.85} onPress={loadIdentity}>
+            <LinearGradient
+              colors={['#6C63FF', '#A78BFA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.btnGradient}
+            >
+              <Text style={styles.btnText}>Start chatting</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  // ── Input state ────────────────────────────────────────────────────────────
   return (
     <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
       <KeyboardAvoidingView
@@ -53,21 +75,17 @@ export default function UsernameScreen({ navigation }) {
       >
         <View style={[styles.inner, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 }]}>
 
-          {/* Back */}
           <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}>
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
 
-          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Choose your{'\n'}username</Text>
             <Text style={styles.subtitle}>
-              This is how your contacts will identify you.{'\n'}
-              It cannot be changed later.
+              This is how your contacts will identify you.{'\n'}It cannot be changed later.
             </Text>
           </View>
 
-          {/* Input */}
           <View style={styles.inputWrapper}>
             <Text style={styles.atSign}>@</Text>
             <TextInput
@@ -85,7 +103,6 @@ export default function UsernameScreen({ navigation }) {
             />
           </View>
 
-          {/* Validation rules */}
           <View style={styles.rules}>
             {ruleResults.map((r) => (
               <View key={r.label} style={styles.ruleRow}>
@@ -99,12 +116,10 @@ export default function UsernameScreen({ navigation }) {
             ))}
           </View>
 
-          {error && <Text style={styles.error}>{error}</Text>}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          {/* Spacer */}
           <View style={styles.flex} />
 
-          {/* CTA */}
           <TouchableOpacity
             style={[styles.btn, !isValid && styles.btnDisabled]}
             activeOpacity={isValid ? 0.85 : 1}
@@ -119,9 +134,7 @@ export default function UsernameScreen({ navigation }) {
             >
               {loading
                 ? <ActivityIndicator color="#fff" />
-                : <Text style={[styles.btnText, !isValid && styles.btnTextDisabled]}>
-                    Create identity
-                  </Text>
+                : <Text style={[styles.btnText, !isValid && styles.btnTextDisabled]}>Create identity</Text>
               }
             </LinearGradient>
           </TouchableOpacity>
@@ -129,6 +142,7 @@ export default function UsernameScreen({ navigation }) {
           <Text style={styles.note}>
             🔑 A unique encryption key pair will be generated on your device.
           </Text>
+
         </View>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -169,4 +183,9 @@ const styles = StyleSheet.create({
   btnTextDisabled: { color: '#555570' },
 
   note:            { fontSize: 12, color: '#3D3D5C', textAlign: 'center', lineHeight: 18, paddingHorizontal: 16 },
+
+  successIcon:     { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(52,211,153,0.15)', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 28 },
+  successTick:     { fontSize: 36, color: '#34D399' },
+  successTitle:    { fontSize: 32, fontWeight: '800', color: '#FFFFFF', lineHeight: 40, letterSpacing: -0.5, marginBottom: 16 },
+  successSub:      { fontSize: 14, color: '#6B6B8A', lineHeight: 22, marginBottom: 40 },
 });

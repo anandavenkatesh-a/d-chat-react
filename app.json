@@ -6,19 +6,28 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0D"
+    },
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.dchat.app",
       "infoPlist": {
         "NSCameraUsageDescription": "D-Chat needs camera access to scan contact QR codes."
       }
     },
     "android": {
+      "package": "com.dchat.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0D0D0D",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.INTERNET"
       ]
     },
     "plugins": [
@@ -27,7 +36,8 @@
         {
           "cameraPermission": "D-Chat needs camera access to scan contact QR codes."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

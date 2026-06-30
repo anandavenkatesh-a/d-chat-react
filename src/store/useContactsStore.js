@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import {
   getAllContacts,
   insertContact,
-  deleteContact,
+  eraseContact,
   getContact,
   contactExists,
 } from '../db/contacts';
@@ -50,7 +50,7 @@ const useContactsStore = create((set, get) => ({
    * Future messages from this device go to pending_messages automatically.
    */
   eraseContact: async (deviceId) => {
-    await deleteContact(deviceId);
+    await eraseContact(deviceId);
     const contacts = await getAllContacts();
     set({ contacts });
   },
@@ -80,7 +80,10 @@ const useContactsStore = create((set, get) => ({
   },
 
   getContact: (deviceId) => {
-    return get().contacts.find((c) => c.deviceId === deviceId) ?? null;
+    const contact = get().contacts.find((c) => c.deviceId === deviceId);
+    // Return null if erased (public key nulled out) — chat treats them as unknown
+    if (!contact || !contact.publicKey) return null;
+    return contact;
   },
 }));
 

@@ -8,7 +8,7 @@
  */
 
 import nacl from 'tweetnacl';
-import { decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util';
+import { decodeBase64, decodeUTF8 } from 'tweetnacl-util';
 import { publicKeyToBytes, privateKeyToBytes } from './keyPair';
 
 /**
@@ -34,7 +34,7 @@ export function decryptMessage(encryptedPayload, senderPublicKey, recipientPriva
 
     if (!decrypted) return null; // Authentication failed
 
-    return encodeUTF8(decrypted);  // ← actually decodeUTF8 here but named encodeUTF8 in lib
+    return decodeUTF8(decrypted); // convert Uint8Array → string
   } catch {
     return null; // Malformed payload
   }

@@ -9,15 +9,14 @@
 
 import { getDatabase } from './database';
 import { TABLES } from '../constants/db';
-import 'react-native-get-random-values';
-import { v4 as uuidv4 } from 'uuid';
+import { generateUUID } from '../utils/uuid';
 
 export async function insertPendingMessage({ fromDeviceId, ciphertext }) {
   const db = getDatabase();
   await db.runAsync(
     `INSERT INTO ${TABLES.PENDING_MESSAGES} (id, from_device_id, ciphertext, arrived_at)
      VALUES (?, ?, ?, ?)`,
-    [uuidv4(), fromDeviceId, ciphertext, Date.now()],
+    [generateUUID(), fromDeviceId, ciphertext, Date.now()],
   );
 }
 

@@ -66,7 +66,7 @@ export default function IdentityCreated() {
           {STEPS.map((s, i) => (
             <View key={i} style={styles.step}>
               <View style={styles.stepNum}>
-                <Text style={styles.stepNumText}>{i + 1}</Text>
+                <Text style={styles.stepNumText}>{String(i + 1)}</Text>
               </View>
               <Text style={styles.stepText}>{s}</Text>
             </View>

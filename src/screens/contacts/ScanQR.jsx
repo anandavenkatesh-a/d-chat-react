@@ -4,7 +4,7 @@
  * Parses payload, validates, saves contact, drains pending messages.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import useContactsStore from '../../store/useContactsStore';

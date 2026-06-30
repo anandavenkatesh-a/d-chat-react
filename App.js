@@ -3,7 +3,6 @@
  * Entry point — initializes DB, loads identity, routes to onboarding or main app.
  */
 
-import 'react-native-get-random-values';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -11,15 +10,19 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import { initDatabase } from './src/db/database';
-import useIdentityStore from './src/store/useIdentityStore';
-import useContactsStore from './src/store/useContactsStore';
+import { initDatabase }      from './src/db/database';
+import useIdentityStore      from './src/store/useIdentityStore';
+import useContactsStore      from './src/store/useContactsStore';
+import { useSocketSetup }    from './src/hooks/useSocketSetup';
 
-import WelcomeScreen     from './src/screens/onboarding/WelcomeScreen';
-import UsernameScreen    from './src/screens/onboarding/UsernameScreen';
-import IdentityCreated   from './src/screens/onboarding/IdentityCreated';
-import HomePlaceholder   from './src/screens/home/HomePlaceholder';
-import AddContactScreen  from './src/screens/contacts/AddContactScreen';
+// Onboarding
+import WelcomeScreen      from './src/screens/onboarding/WelcomeScreen';
+import UsernameScreen     from './src/screens/onboarding/UsernameScreen';
+
+// Main app
+import ContactListScreen  from './src/screens/home/ContactListScreen';
+import ChatScreen         from './src/screens/chat/ChatScreen';
+import AddContactScreen   from './src/screens/contacts/AddContactScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -29,6 +32,8 @@ export default function App() {
 
   const { isReady, username, loadIdentity } = useIdentityStore();
   const { loadContacts }                    = useContactsStore();
+
+  useSocketSetup();
 
   useEffect(() => {
     initDatabase()
@@ -62,18 +67,16 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
           {!username ? (
-            // Onboarding flow
             <>
-              <Stack.Screen name="Welcome"         component={WelcomeScreen} />
-              <Stack.Screen name="Username"        component={UsernameScreen} />
-              <Stack.Screen name="IdentityCreated" component={IdentityCreated} />
+              <Stack.Screen name="Welcome"  component={WelcomeScreen} />
+              <Stack.Screen name="Username" component={UsernameScreen} />
             </>
           ) : (
-            // Main app (Phase 6)
             <>
-              <Stack.Screen name="Home"       component={HomePlaceholder} />
+              <Stack.Screen name="Home"       component={ContactListScreen} />
+              <Stack.Screen name="Chat"       component={ChatScreen} />
               <Stack.Screen name="AddContact" component={AddContactScreen} />
             </>
           )}

@@ -34,14 +34,15 @@ export async function getAllContacts() {
 }
 
 /**
- * Erase contact — deletes public key so messages become unreadable.
- * Messages in the messages table are untouched (still encrypted).
- * Future messages from this device go to pending_messages.
+ * Erase contact — nulls out the public key so messages become unreadable.
+ * The contact ROW stays in the DB so the chat history is still visible
+ * (as locked ciphertext) and the user knows to re-scan their QR.
+ * Future messages from this device go to pending_messages automatically.
  */
-export async function deleteContact(deviceId) {
+export async function eraseContact(deviceId) {
   const db = getDatabase();
   await db.runAsync(
-    `DELETE FROM ${TABLES.CONTACTS} WHERE device_id = ?`,
+    `UPDATE ${TABLES.CONTACTS} SET public_key = NULL WHERE device_id = ?`,
     [deviceId],
   );
 }
