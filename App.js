@@ -19,6 +19,7 @@ import { initDatabase }      from './src/db/database';
 import useIdentityStore      from './src/store/useIdentityStore';
 import useContactsStore      from './src/store/useContactsStore';
 import { useSocketSetup }    from './src/hooks/useSocketSetup';
+import { setupNotifications, clearAllNotifications } from './src/services/notifications';
 
 // Onboarding
 import WelcomeScreen      from './src/screens/onboarding/WelcomeScreen';
@@ -50,6 +51,16 @@ export default function App() {
     if (!dbReady) return;
     loadIdentity().then(() => loadContacts());
   }, [dbReady]);
+
+  // Request notification permission once the user has an identity
+  // (no point asking before onboarding completes).
+  useEffect(() => {
+    if (!username) return;
+    setupNotifications();
+    // Clear stale badge/tray notifications whenever the app is opened —
+    // unread state is now visible directly in the contact list instead.
+    clearAllNotifications();
+  }, [username]);
 
   if (error) {
     return (

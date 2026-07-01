@@ -3,6 +3,13 @@
     "version": ">= 16.0.0"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "android": {
@@ -10,14 +17,12 @@
       },
       "ios": {
         "simulator": false
-      },
-      "channel": "preview"
+      }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
-      },
-      "channel": "production"
+      }
     }
   },
   "submit": {

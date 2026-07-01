@@ -28,10 +28,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.INTERNET",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.INTERNET",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE"
       ]
     },
     "plugins": [
@@ -41,7 +39,16 @@
           "cameraPermission": "D-Chat needs camera access to scan contact QR codes."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#6C63FF"
+        }
+      ],
+      "expo-sqlite",
+      "expo-status-bar"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

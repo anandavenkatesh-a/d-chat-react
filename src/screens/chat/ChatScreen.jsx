@@ -17,6 +17,8 @@ import ErasedBanner      from './ErasedBanner';
 import useMessagesStore  from '../../store/useMessagesStore';
 import useContactsStore  from '../../store/useContactsStore';
 import useIdentityStore  from '../../store/useIdentityStore';
+import { setActiveChatDeviceId, clearActiveChatDeviceId } from '../../services/activeChatTracker';
+import { clearNotificationsForContact } from '../../services/notifications';
 
 export default function ChatScreen({ route, navigation }) {
   const { contactDeviceId, contactUsername } = route.params;
@@ -31,6 +33,15 @@ export default function ChatScreen({ route, navigation }) {
   const contact  = getContact(contactDeviceId);
   const messages = getMessages(contactDeviceId);
   const isErased = !contact;
+
+  // Track this chat as "active" while mounted, so incoming-message
+  // notifications for THIS contact are suppressed while the user is
+  // already looking at the conversation. Cleared on unmount (back/swap).
+  useEffect(() => {
+    setActiveChatDeviceId(contactDeviceId);
+    clearNotificationsForContact(contactDeviceId);
+    return () => clearActiveChatDeviceId();
+  }, [contactDeviceId]);
 
   useEffect(() => {
     loadMessages(contactDeviceId);

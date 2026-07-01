@@ -3,16 +3,18 @@
  * Main home screen. Shows list of contacts with last message preview.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet,
   TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 
 import useContactsStore  from '../../store/useContactsStore';
 import useIdentityStore  from '../../store/useIdentityStore';
 import useMessagesStore  from '../../store/useMessagesStore';
+import { clearAllNotifications } from '../../services/notifications';
 
 export default function ContactListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -21,7 +23,10 @@ export default function ContactListScreen({ navigation }) {
   const username                   = useIdentityStore((s) => s.username);
   const contacts                   = useContactsStore((s) => s.contacts);
   const loadContacts               = useContactsStore((s) => s.loadContacts);
-  const getMessages                = useMessagesStore((s) => s.getMessages);
+  // Subscribing to the whole messagesByContact map (not via a getter
+  // function) ensures this screen re-renders whenever ANY message arrives
+  // or changes status — which is what keeps the unread badge counts live.
+  const messagesByContact          = useMessagesStore((s) => s.messagesByContact);
   const loadMessages               = useMessagesStore((s) => s.loadMessages);
 
   // Poll connection status safely without importing socket directly
@@ -44,15 +49,28 @@ export default function ContactListScreen({ navigation }) {
     contacts.forEach((c) => loadMessages(c.deviceId));
   }, [contacts.length]);
 
+  // Re-pull messages from SQLite every time this screen regains focus
+  // (e.g. coming back from a chat, or returning to the app from
+  // background) so unread counts reflect anything that arrived while
+  // the user was elsewhere.
+  useFocusEffect(
+    useCallback(() => {
+      contacts.forEach((c) => loadMessages(c.deviceId));
+      clearAllNotifications();
+    }, [contacts.length])
+  );
+
   function getLastMessage(deviceId) {
-    const msgs = getMessages(deviceId);
+    const msgs = messagesByContact[deviceId] || [];
     return msgs.length > 0 ? msgs[msgs.length - 1] : null;
   }
 
   function getUnreadCount(deviceId) {
-    const msgs = getMessages(deviceId);
+    const msgs = messagesByContact[deviceId] || [];
     return msgs.filter((m) => m.direction === 'in' && m.status !== 'seen').length;
   }
+
+  const totalUnread = contacts.reduce((sum, c) => sum + getUnreadCount(c.deviceId), 0);
 
   function formatPreview(msg) {
     if (!msg) return 'Tap to start chatting';
@@ -114,7 +132,16 @@ export default function ContactListScreen({ navigation }) {
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <View>
-          <Text style={styles.wordmark}>D-Chat</Text>
+          <View style={styles.wordmarkRow}>
+            <Text style={styles.wordmark}>D-Chat</Text>
+            {totalUnread > 0 && (
+              <View style={styles.totalBadge}>
+                <Text style={styles.totalBadgeText}>
+                  {totalUnread > 99 ? '99+' : String(totalUnread)}
+                </Text>
+              </View>
+            )}
+          </View>
           <View style={styles.statusRow}>
             <View style={[styles.dot, connected ? styles.dotOn : styles.dotOff]} />
             <Text style={styles.statusText}>
@@ -163,7 +190,10 @@ const styles = StyleSheet.create({
   root:          { flex: 1, backgroundColor: '#0D0D0D' },
 
   header:        { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  wordmarkRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   wordmark:      { fontSize: 28, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  totalBadge:    { backgroundColor: '#6C63FF', borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, marginBottom: 4 },
+  totalBadgeText:{ fontSize: 11, color: '#fff', fontWeight: '800' },
   statusRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
   dot:           { width: 7, height: 7, borderRadius: 4 },
   dotOn:         { backgroundColor: '#34D399' },

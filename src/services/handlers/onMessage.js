@@ -14,6 +14,8 @@ import { insertPendingMessage } from '../../db/pendingMessages';
 import { decryptMessage } from '../../crypto/decrypt';
 import { loadPrivateKey } from '../../crypto/keyPair';
 import { MSG_STATUS } from '../../constants/config';
+import { notifyNewMessage as pushNotification } from '../notifications';
+import { getActiveChatDeviceId } from '../activeChatTracker';
 
 export async function handleMessage(event, notifyNewMessage) {
   const { from: fromDeviceId, msg_id, payload } = event;
@@ -46,6 +48,12 @@ export async function handleMessage(event, notifyNewMessage) {
       send({ type: 'ack_stored', msg_id, to: fromDeviceId });
 
       notifyNewMessage?.({ fromDeviceId, msg_id, plaintext });
+
+      // Fire a privacy-preserving local push notification — but only if
+      // the user isn't currently looking at this exact chat thread.
+      if (getActiveChatDeviceId() !== fromDeviceId) {
+        pushNotification({ contactDeviceId: fromDeviceId });
+      }
 
     } else {
       // ── Unknown / erased sender: store raw ciphertext silently ────────────
