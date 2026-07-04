@@ -3,10 +3,12 @@
  * Handles ACK events from the relay — updates message status in SQLite.
  *
  * Events handled:
- *   ack_sent   → status: 'sent'   (relay received it)       ✓
- *   ack_stored → status: 'stored' (recipient saved it)      ✓✓
- *   ack_seen   → status: 'seen'   (recipient opened it)     ✓✓✓
- *   dropped    → stays 'sent'     (recipient was offline)
+ *   ack_sent   → status: 'sent'   (relay received it)              ✓
+ *   ack_queued → stays 'sent'     (recipient offline, relay is
+ *                                  holding the ciphertext up to 24h
+ *                                  and will deliver on reconnect)   ✓
+ *   ack_stored → status: 'stored' (recipient saved it)              ✓✓
+ *   ack_seen   → status: 'seen'   (recipient opened it)             ✓✓✓
  */
 
 import { updateMessageStatus } from '../../db/messages';
@@ -33,11 +35,16 @@ export async function handleAckSeen(event, notifyStatusUpdate) {
   notifyStatusUpdate?.({ msg_id, status: MSG_STATUS.SEEN });
 }
 
-export async function handleDropped(event) {
-  // Recipient was offline — message stays at 'sent' status
-  // No status change needed; log for debugging
+/**
+ * Recipient was offline when the message was sent. The relay is now
+ * holding the encrypted blob (up to 24h) and will deliver it the moment
+ * the recipient reconnects — this is no longer a dead end like the old
+ * "dropped" behavior. Status remains 'sent' (single ✓) since 'stored'
+ * only becomes true once the recipient's device actually saves it.
+ */
+export async function handleAckQueued(event) {
   const { msg_id } = event;
-  console.log(`[ACK] Message dropped (recipient offline): ${msg_id}`);
+  console.log(`[ACK] Message queued on relay, recipient offline: ${msg_id}`);
 }
 
 /**

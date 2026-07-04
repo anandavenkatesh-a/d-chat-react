@@ -12,7 +12,7 @@
 
 import { handleMessage }                                         from './handlers/onMessage';
 import { handleAckSent, handleAckStored, handleAckSeen,
-         handleDropped, handlePendingAcks }                      from './handlers/onAck';
+         handleAckQueued, handlePendingAcks }                     from './handlers/onAck';
 
 let _onNewMessage    = null;
 let _onStatusUpdate  = null;
@@ -49,8 +49,8 @@ export async function routeEvent(event) {
         await handleAckSeen(event, _onStatusUpdate);
         break;
 
-      case 'dropped':
-        await handleDropped(event);
+      case 'ack_queued':
+        await handleAckQueued(event);
         break;
 
       case 'pending_acks':
