@@ -61,9 +61,6 @@
     "owner": "venkii21",
     "runtimeVersion": {
       "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/c825212f-4f47-4f38-80b0-d0ed5039e49c"
     }
   }
 }

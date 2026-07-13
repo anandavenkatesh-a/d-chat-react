@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  network_security_config.xml (DEBUG VARIANT ONLY)
+
+  This file lives in src/debug/res/xml/ and Android's build system
+  automatically uses it INSTEAD OF src/main/res/xml/network_security_config.xml
+  for debug builds only (npx expo run:android, development builds). Release
+  builds always use the strict main/ version with full certificate pinning
+  and no cleartext exception — this file has zero effect on a release APK.
+
+  Why this exists: the Expo/Metro dev server serves the JS bundle over
+  plain HTTP on your local network (e.g. http://192.168.0.107:8081) so
+  Fast Refresh works. That's a development-only mechanism — release
+  builds have the JS bundle compiled directly into the APK and never
+  talk to Metro at all.
+
+  ⚠️ IMPORTANT: this list of IPs must include whatever IP your dev
+  machine currently has on your LAN. If your PC's IP changes (new WiFi
+  network, DHCP lease renewal, router restart, etc.) you'll get a
+  "CLEARTEXT communication to <new-ip> not permitted" error again —
+  when that happens, just add the new IP as another <domain> line below.
+  This has already happened once (103 → 107) as your DHCP lease renewed.
+-->
+<network-security-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain> <!-- Android emulator's host loopback -->
+        <!-- Known dev machine IPs seen so far — add new ones here as needed -->
+        <domain includeSubdomains="false">192.168.0.103</domain>
+        <domain includeSubdomains="false">192.168.0.107</domain>
+    </domain-config>
+
+    <!-- The relay itself still requires the pinned certificate even in
+         debug builds — this is deliberately NOT loosened, so testing
+         against a real device still validates the pinning logic works. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">d-chat-relay-server-production.up.railway.app</domain>
+        <pin-set expiration="2027-01-01">
+            <pin digest="SHA-256">hORJtOUv6S5sVpxykVdj7ceRoUfeLhICfOGA0n68co0=</pin>
+            <pin digest="SHA-256">brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=</pin>
+        </pin-set>
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </domain-config>
+
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+
+</network-security-config>

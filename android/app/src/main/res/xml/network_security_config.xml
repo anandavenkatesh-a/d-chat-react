@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  network_security_config.xml
+
+  Pins the relay server's TLS certificate so that even a state-issued or
+  ISP-injected root CA cannot man-in-the-middle the WebSocket connection.
+  If the presented certificate's SPKI hash doesn't match one of the pins
+  below, Android refuses the connection entirely — before any app code
+  even runs.
+
+  See CERT_PINNING.md for how to generate the correct pin values.
+  ⚠️ Replace both PLACEHOLDER pins before building a release APK, or
+  every connection to the relay will fail (cleartext fallback is
+  disabled below on purpose).
+-->
+<network-security-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">d-chat-relay-server-production.up.railway.app</domain>
+
+        <pin-set expiration="2027-01-01">
+            <!-- Primary: current leaf certificate SPKI pin -->
+            <pin digest="SHA-256">hORJtOUv6S5sVpxykVdj7ceRoUfeLhICfOGA0n68co0=</pin>
+            <!-- Backup: intermediate CA SPKI pin — survives leaf rotation -->
+            <pin digest="SHA-256">brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4=</pin>
+        </pin-set>
+
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </domain-config>
+
+    <!--
+      Default policy for any other domain the app might ever talk to
+      (there shouldn't be any others — the app only speaks to the relay).
+      Cleartext (unencrypted HTTP) is disabled everywhere, no exceptions.
+    -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+
+</network-security-config>

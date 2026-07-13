@@ -1,76 +1,58 @@
 /**
  * ContactListScreen.jsx
  * Main home screen. Shows list of contacts with last message preview.
+ *
+ * Connection-awareness additions:
+ *  - On first app launch, the contact list is fully gated behind a
+ *    "Connecting to secure network…" overlay until the relay connection
+ *    succeeds at least once. Prevents the false impression that the app
+ *    is ready to send/receive before Tor + the relay handshake actually
+ *    complete (which can take several seconds).
+ *  - After that first successful connection, if the connection is later
+ *    lost (backgrounded, network change, etc.), a small non-blocking
+ *    banner explains that messages won't arrive until the app is
+ *    reopened — since there's no always-on background service unless
+ *    the optional persistent mode is enabled (not yet built).
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect } from 'react';
 import {
-  View, Text, FlatList, StyleSheet,
-  TouchableOpacity, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, FlatList,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import useContactsStore  from '../../store/useContactsStore';
-import useIdentityStore  from '../../store/useIdentityStore';
-import useMessagesStore  from '../../store/useMessagesStore';
+import useIdentityStore   from '../../store/useIdentityStore';
+import useContactsStore   from '../../store/useContactsStore';
+import useMessagesStore   from '../../store/useMessagesStore';
+import useConnectionStore from '../../store/useConnectionStore';
 import { clearAllNotifications } from '../../services/notifications';
 
 export default function ContactListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const [connected, setConnected] = useState(false);
-
-  const username                   = useIdentityStore((s) => s.username);
-  const contacts                   = useContactsStore((s) => s.contacts);
-  const loadContacts               = useContactsStore((s) => s.loadContacts);
-  // Subscribing to the whole messagesByContact map (not via a getter
-  // function) ensures this screen re-renders whenever ANY message arrives
-  // or changes status — which is what keeps the unread badge counts live.
-  const messagesByContact          = useMessagesStore((s) => s.messagesByContact);
-  const loadMessages               = useMessagesStore((s) => s.loadMessages);
-
-  // Poll connection status safely without importing socket directly
-  useEffect(() => {
-    let mounted = true;
-    async function checkConnection() {
-      try {
-        const { isConnected } = await import('../../services/socket');
-        if (mounted) setConnected(isConnected());
-      } catch {
-        if (mounted) setConnected(false);
-      }
-    }
-    checkConnection();
-    const interval = setInterval(checkConnection, 3000);
-    return () => { mounted = false; clearInterval(interval); };
-  }, []);
+  const { username }               = useIdentityStore();
+  const { contacts, loadContacts } = useContactsStore();
+  const { getMessages, loadMessages } = useMessagesStore();
+  const { status, hasConnectedOnce } = useConnectionStore();
 
   useEffect(() => {
     contacts.forEach((c) => loadMessages(c.deviceId));
   }, [contacts.length]);
 
-  // Re-pull messages from SQLite every time this screen regains focus
-  // (e.g. coming back from a chat, or returning to the app from
-  // background) so unread counts reflect anything that arrived while
-  // the user was elsewhere.
-  useFocusEffect(
-    useCallback(() => {
-      contacts.forEach((c) => loadMessages(c.deviceId));
-      clearAllNotifications();
-    }, [contacts.length])
-  );
+  useEffect(() => {
+    clearAllNotifications();
+  }, []);
 
   function getLastMessage(deviceId) {
-    const msgs = messagesByContact[deviceId] || [];
+    const msgs = getMessages(deviceId);
     return msgs.length > 0 ? msgs[msgs.length - 1] : null;
   }
 
   function getUnreadCount(deviceId) {
-    const msgs = messagesByContact[deviceId] || [];
+    const msgs = getMessages(deviceId);
     return msgs.filter((m) => m.direction === 'in' && m.status !== 'seen').length;
   }
-
-  const totalUnread = contacts.reduce((sum, c) => sum + getUnreadCount(c.deviceId), 0);
 
   function formatPreview(msg) {
     if (!msg) return 'Tap to start chatting';
@@ -92,8 +74,8 @@ export default function ContactListScreen({ navigation }) {
   function renderContact({ item }) {
     const lastMsg  = getLastMessage(item.deviceId);
     const unread   = getUnreadCount(item.deviceId);
+    const initial  = item.username[0].toUpperCase();
     const isErased = !item.publicKey;
-    const initial  = item.username ? item.username[0].toUpperCase() : '?';
 
     return (
       <TouchableOpacity
@@ -115,12 +97,17 @@ export default function ContactListScreen({ navigation }) {
 
         <View style={styles.info}>
           <View style={styles.infoTop}>
-            <Text style={[styles.name, isErased && styles.nameErased]}>
-              {'@' + item.username}
-            </Text>
+            <Text style={[styles.name, isErased && styles.nameErased]}>@{item.username}</Text>
             <Text style={styles.time}>{formatTime(lastMsg)}</Text>
           </View>
-          <Text style={[styles.preview, unread > 0 && !isErased && styles.previewUnread, isErased && styles.previewErased]} numberOfLines={1}>
+          <Text
+            style={[
+              styles.preview,
+              unread > 0 && !isErased && styles.previewUnread,
+              isErased && styles.previewErased,
+            ]}
+            numberOfLines={1}
+          >
             {isErased ? '🔒 Contact erased — tap to restore' : formatPreview(lastMsg)}
           </Text>
         </View>
@@ -128,24 +115,20 @@ export default function ContactListScreen({ navigation }) {
     );
   }
 
+  const isConnected      = status === 'connected';
+  const showFirstLaunchGate = !hasConnectedOnce; // full-screen block, first launch only
+  const showBanner       = hasConnectedOnce && !isConnected; // small banner after that
+
   return (
-    <View style={styles.root}>
+    <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <View>
-          <View style={styles.wordmarkRow}>
-            <Text style={styles.wordmark}>D-Chat</Text>
-            {totalUnread > 0 && (
-              <View style={styles.totalBadge}>
-                <Text style={styles.totalBadgeText}>
-                  {totalUnread > 99 ? '99+' : String(totalUnread)}
-                </Text>
-              </View>
-            )}
-          </View>
+          <Text style={styles.wordmark}>D-Chat</Text>
           <View style={styles.statusRow}>
-            <View style={[styles.dot, connected ? styles.dotOn : styles.dotOff]} />
+            <View style={[styles.dot, isConnected ? styles.dotOn : styles.dotOff]} />
             <Text style={styles.statusText}>
-              {'@' + username + ' · ' + (connected ? 'connected' : 'reconnecting…')}
+              @{username} · {isConnected ? 'connected' : status === 'connecting' ? 'connecting…' : 'offline'}
             </Text>
           </View>
         </View>
@@ -158,12 +141,38 @@ export default function ContactListScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {contacts.length === 0 ? (
+      {/* Persistent banner — shown after the first successful connection,
+          if we later lose it. Explains why new messages won't arrive
+          silently in the background. */}
+      {showBanner && (
+        <View style={styles.banner}>
+          <Text style={styles.bannerIcon}>⚠️</Text>
+          <Text style={styles.bannerText}>
+            Not connected. Keep D-Chat open to receive new messages —
+            messages sent to you while you're offline wait on the server
+            for up to 24 hours and arrive automatically next time you open the app.
+          </Text>
+        </View>
+      )}
+
+      {/* Full-screen gate — only on first launch, until the very first
+          connection succeeds. Prevents interacting with a contact list
+          that looks ready but can't actually send/receive yet. */}
+      {showFirstLaunchGate ? (
+        <View style={styles.gate}>
+          <ActivityIndicator size="large" color="#6C63FF" />
+          <Text style={styles.gateTitle}>Connecting to secure network…</Text>
+          <Text style={styles.gateSub}>
+            Routing through Tor for privacy.{'\n'}This can take up to 15 seconds on first launch.
+          </Text>
+        </View>
+      ) : contacts.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>{'💬'}</Text>
+          <Text style={styles.emptyIcon}>💬</Text>
           <Text style={styles.emptyTitle}>No contacts yet</Text>
           <Text style={styles.emptySub}>
-            {'Tap + Add and scan a contact\'s QR code to get started.'}
+            Tap <Text style={styles.emptyAccent}>+ Add</Text> and scan a{'\n'}
+            contact's QR code to get started.
           </Text>
         </View>
       ) : (
@@ -174,33 +183,34 @@ export default function ContactListScreen({ navigation }) {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={false}
-              onRefresh={loadContacts}
-              tintColor="#6C63FF"
-            />
+            <RefreshControl refreshing={false} onRefresh={loadContacts} tintColor="#6C63FF" />
           }
         />
       )}
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  root:          { flex: 1, backgroundColor: '#0D0D0D' },
+  root:          { flex: 1 },
 
   header:        { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  wordmarkRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   wordmark:      { fontSize: 28, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
-  totalBadge:    { backgroundColor: '#6C63FF', borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, marginBottom: 4 },
-  totalBadgeText:{ fontSize: 11, color: '#fff', fontWeight: '800' },
   statusRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
   dot:           { width: 7, height: 7, borderRadius: 4 },
   dotOn:         { backgroundColor: '#34D399' },
-  dotOff:        { backgroundColor: '#6B6B8A' },
+  dotOff:        { backgroundColor: '#F59E0B' },
   statusText:    { fontSize: 12, color: '#4A4A6A' },
   addBtn:        { backgroundColor: 'rgba(108,99,255,0.2)', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 16, borderWidth: 1, borderColor: 'rgba(108,99,255,0.4)' },
   addBtnText:    { color: '#A78BFA', fontWeight: '700', fontSize: 14 },
+
+  banner:        { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: 'rgba(245,158,11,0.1)', borderBottomWidth: 1, borderBottomColor: 'rgba(245,158,11,0.25)', paddingHorizontal: 20, paddingVertical: 12 },
+  bannerIcon:    { fontSize: 14, marginTop: 1 },
+  bannerText:    { flex: 1, fontSize: 12, color: '#FCD34D', lineHeight: 18 },
+
+  gate:          { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 16 },
+  gateTitle:     { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
+  gateSub:       { fontSize: 13, color: '#4A4A6A', textAlign: 'center', lineHeight: 20 },
 
   list:          { paddingTop: 8 },
 
@@ -224,4 +234,5 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 52, marginBottom: 18 },
   emptyTitle:    { fontSize: 22, fontWeight: '700', color: '#FFFFFF', marginBottom: 10 },
   emptySub:      { fontSize: 14, color: '#4A4A6A', textAlign: 'center', lineHeight: 24 },
+  emptyAccent:   { color: '#A78BFA', fontWeight: '600' },
 });
