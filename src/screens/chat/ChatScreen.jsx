@@ -1,14 +1,25 @@
 /**
  * ChatScreen.jsx
  * Full chat thread for a single contact.
+ *
+ * Bug fix: "seen" (✓✓✓) must only be sent when the user's screen is
+ * actually ON and this specific chat is the focused screen — not
+ * merely when this component happens to still be mounted while a
+ * message arrives (e.g. phone screen off, app kept alive in the
+ * background by the persistent Tor/WebSocket connection). Previously,
+ * markAsSeen() fired purely off `messages.length` changing, with no
+ * check on AppState or navigation focus, so a message could be
+ * acknowledged as "seen" while the recipient's screen was off.
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
-  Alert, KeyboardAvoidingView, Platform,
+  Alert, KeyboardAvoidingView, Platform, AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import MessageBubble     from './MessageBubble';
 import MessageInput      from './MessageInput';
@@ -17,14 +28,14 @@ import ErasedBanner      from './ErasedBanner';
 import useMessagesStore  from '../../store/useMessagesStore';
 import useContactsStore  from '../../store/useContactsStore';
 import useIdentityStore  from '../../store/useIdentityStore';
-import { setActiveChatDeviceId, clearActiveChatDeviceId } from '../../services/activeChatTracker';
-import { clearNotificationsForContact } from '../../services/notifications';
 
 export default function ChatScreen({ route, navigation }) {
   const { contactDeviceId, contactUsername } = route.params;
   const insets   = useSafeAreaInsets();
   const listRef  = useRef(null);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const appStateRef = useRef(AppState.currentState);
+  const isFocused = useIsFocused();
 
   const { privateKey }                                          = useIdentityStore();
   const { getContact, eraseContact }                            = useContactsStore();
@@ -34,27 +45,61 @@ export default function ChatScreen({ route, navigation }) {
   const messages = getMessages(contactDeviceId);
   const isErased = !contact;
 
-  // Track this chat as "active" while mounted, so incoming-message
-  // notifications for THIS contact are suppressed while the user is
-  // already looking at the conversation. Cleared on unmount (back/swap).
-  useEffect(() => {
-    setActiveChatDeviceId(contactDeviceId);
-    clearNotificationsForContact(contactDeviceId);
-    return () => clearActiveChatDeviceId();
-  }, [contactDeviceId]);
+  /**
+   * The ONLY correct condition for "the user is actually looking at this
+   * chat right now": app is foregrounded AND this screen is the focused
+   * route in the navigator. Screen-off, backgrounded, or navigated-away
+   * (even if this component is still mounted deeper in the stack) must
+   * never satisfy this.
+   */
+  function isActivelyViewing() {
+    return AppState.currentState === 'active' && isFocused;
+  }
 
+  function markSeenIfActivelyViewing() {
+    if (isActivelyViewing()) {
+      markAsSeen(contactDeviceId);
+    }
+  }
+
+  // Load messages once on mount; only mark seen if genuinely being viewed
   useEffect(() => {
     loadMessages(contactDeviceId);
-    markAsSeen(contactDeviceId);
+    markSeenIfActivelyViewing();
   }, [contactDeviceId]);
 
+  // New messages arrived — only mark seen if genuinely being viewed,
+  // and scroll to bottom regardless (that's a harmless UI action, not
+  // a privacy-sensitive acknowledgement).
   useEffect(() => {
     if (messages.length > 0) {
-      markAsSeen(contactDeviceId);
+      markSeenIfActivelyViewing();
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     }
   }, [messages.length]);
 
+  // Re-check when the app returns to foreground OR this screen regains
+  // focus — this is what correctly marks messages as seen the moment
+  // the user actually turns the screen back on / navigates back here,
+  // rather than silently and prematurely when they arrived.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const wasBackground = appStateRef.current !== 'active';
+      appStateRef.current = nextState;
+      if (wasBackground && nextState === 'active' && isFocused) {
+        markAsSeen(contactDeviceId);
+      }
+    });
+    return () => subscription.remove();
+  }, [contactDeviceId, isFocused]);
+
+  useEffect(() => {
+    if (isFocused) {
+      markSeenIfActivelyViewing();
+    }
+  }, [isFocused]);
+
+  // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async (plaintext) => {
     if (!contact) return;
     await sendMessage({
@@ -65,6 +110,7 @@ export default function ChatScreen({ route, navigation }) {
     });
   }, [contact, contactDeviceId, privateKey]);
 
+  // ── Erase ─────────────────────────────────────────────────────────────────
   async function handleErase() {
     setSheetVisible(false);
     setTimeout(() => {
@@ -101,8 +147,9 @@ export default function ChatScreen({ route, navigation }) {
   }
 
   return (
-    <View style={styles.root}>
+    <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
 
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>←</Text>
@@ -175,7 +222,7 @@ export default function ChatScreen({ route, navigation }) {
         onErase={handleErase}
         contactUsername={contactUsername}
       />
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -207,7 +254,7 @@ function formatDateLabel(timestamp) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0D0D0D' },
+  root:          { flex: 1 },
   flex:          { flex: 1 },
 
   header:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
