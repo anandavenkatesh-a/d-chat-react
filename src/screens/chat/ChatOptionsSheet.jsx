@@ -13,7 +13,7 @@ import {
 import { useEffect, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function ChatOptionsSheet({ visible, onClose, onErase, contactUsername }) {
+export default function ChatOptionsSheet({ visible, onClose, onErase, contactNickname }) {
   const insets    = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(300)).current;
 
@@ -59,7 +59,7 @@ export default function ChatOptionsSheet({ visible, onClose, onErase, contactUse
         <View style={styles.handle} />
 
         {/* Contact label */}
-        <Text style={styles.contactLabel}>@{contactUsername}</Text>
+        <Text style={styles.contactLabel}>{contactNickname}</Text>
 
         {/* Options */}
         <View style={styles.options}>

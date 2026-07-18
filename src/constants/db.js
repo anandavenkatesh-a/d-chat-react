@@ -10,7 +10,6 @@ export const TABLES = {
 export const SQL_CREATE_IDENTITY = `
   CREATE TABLE IF NOT EXISTS ${TABLES.IDENTITY} (
     id          INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row
-    username    TEXT    NOT NULL,
     device_id   TEXT    NOT NULL,
     public_key  TEXT    NOT NULL
   );
@@ -19,7 +18,10 @@ export const SQL_CREATE_IDENTITY = `
 export const SQL_CREATE_CONTACTS = `
   CREATE TABLE IF NOT EXISTS ${TABLES.CONTACTS} (
     device_id   TEXT    PRIMARY KEY,
-    username    TEXT    NOT NULL,
+    nickname    TEXT    NOT NULL,  -- freeform local label YOU chose for
+                                    -- this contact when adding them; not
+                                    -- shared with or known by anyone else,
+                                    -- and not enforced unique in any way
     public_key  TEXT,
     created_at  INTEGER NOT NULL
   );

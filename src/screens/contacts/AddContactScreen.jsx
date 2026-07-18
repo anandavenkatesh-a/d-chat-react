@@ -15,7 +15,7 @@ export default function AddContactScreen({ navigation }) {
   const [tab, setTab] = useState(0);
   const insets = useSafeAreaInsets();
 
-  function handleContactAdded({ username }) {
+  function handleContactAdded({ nickname }) {
     navigation.goBack();
   }
 

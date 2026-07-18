@@ -1,6 +1,15 @@
 /**
  * App.js
- * Entry point — initializes DB, loads identity, routes to onboarding or main app.
+ * Entry point — initializes DB, generates identity automatically (no
+ * onboarding input required — no username, nothing to type), connects
+ * to the relay, and shows the main app.
+ *
+ * There is no onboarding flow anymore: identity (keypair + device_id)
+ * is generated the moment the app is first launched, entirely
+ * automatically, inside useIdentityStore.loadIdentity(). By the time
+ * this component's loading screen finishes, identity is guaranteed to
+ * already exist — so the navigator never needs a separate "onboarding
+ * stack" branch at all.
  */
 
 // MUST be the very first import — patches global.crypto.getRandomValues()
@@ -21,11 +30,7 @@ import useContactsStore      from './src/store/useContactsStore';
 import { useSocketSetup }    from './src/hooks/useSocketSetup';
 import { setupNotifications, clearAllNotifications } from './src/services/notifications';
 
-// Onboarding
-import WelcomeScreen      from './src/screens/onboarding/WelcomeScreen';
-import UsernameScreen     from './src/screens/onboarding/UsernameScreen';
-
-// Main app
+// Main app (no onboarding stack — identity is auto-generated, see above)
 import ContactListScreen  from './src/screens/home/ContactListScreen';
 import ChatScreen         from './src/screens/chat/ChatScreen';
 import AddContactScreen   from './src/screens/contacts/AddContactScreen';
@@ -36,7 +41,7 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false);
   const [error, setError]     = useState(null);
 
-  const { isReady, username, loadIdentity } = useIdentityStore();
+  const { isReady, deviceId, loadIdentity } = useIdentityStore();
   const { loadContacts }                    = useContactsStore();
 
   useSocketSetup();
@@ -49,18 +54,16 @@ export default function App() {
 
   useEffect(() => {
     if (!dbReady) return;
+    // loadIdentity() automatically generates a fresh keypair + device_id
+    // on the very first call if none exists yet — no user input needed.
     loadIdentity().then(() => loadContacts());
   }, [dbReady]);
 
-  // Request notification permission once the user has an identity
-  // (no point asking before onboarding completes).
   useEffect(() => {
-    if (!username) return;
+    if (!deviceId) return;
     setupNotifications();
-    // Clear stale badge/tray notifications whenever the app is opened —
-    // unread state is now visible directly in the contact list instead.
     clearAllNotifications();
-  }, [username]);
+  }, [deviceId]);
 
   if (error) {
     return (
@@ -84,18 +87,9 @@ export default function App() {
       <StatusBar style="light" />
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-          {!username ? (
-            <>
-              <Stack.Screen name="Welcome"  component={WelcomeScreen} />
-              <Stack.Screen name="Username" component={UsernameScreen} />
-            </>
-          ) : (
-            <>
-              <Stack.Screen name="Home"       component={ContactListScreen} />
-              <Stack.Screen name="Chat"       component={ChatScreen} />
-              <Stack.Screen name="AddContact" component={AddContactScreen} />
-            </>
-          )}
+          <Stack.Screen name="Home"       component={ContactListScreen} />
+          <Stack.Screen name="Chat"       component={ChatScreen} />
+          <Stack.Screen name="AddContact" component={AddContactScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

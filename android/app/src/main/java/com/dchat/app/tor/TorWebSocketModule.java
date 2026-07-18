@@ -102,7 +102,16 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
                 // and testing a circuit for the first real request.
                 .connectTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.MILLISECONDS)   // WebSocket: no read timeout
-                .pingInterval(30, TimeUnit.SECONDS)       // keep the circuit alive
+                // Shortened from 30s to 8s. A dead connection (e.g. the
+                // phone was offline/backgrounded and the OS silently
+                // dropped the socket without a clean close) is only
+                // detected when a ping fails — with the old 30s interval,
+                // messages could appear to silently "not arrive" for up
+                // to that same ~30s window after connectivity actually
+                // returned, before the app even realized it needed to
+                // reconnect. 8s keeps detection fast without pinging
+                // aggressively enough to waste meaningful battery.
+                .pingInterval(8, TimeUnit.SECONDS)
                 .build();
 
             Request request = new Request.Builder()

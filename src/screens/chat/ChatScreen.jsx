@@ -30,7 +30,7 @@ import useContactsStore  from '../../store/useContactsStore';
 import useIdentityStore  from '../../store/useIdentityStore';
 
 export default function ChatScreen({ route, navigation }) {
-  const { contactDeviceId, contactUsername } = route.params;
+  const { contactDeviceId, contactNickname } = route.params;
   const insets   = useSafeAreaInsets();
   const listRef  = useRef(null);
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -116,7 +116,7 @@ export default function ChatScreen({ route, navigation }) {
     setTimeout(() => {
       Alert.alert(
         'Erase Contact',
-        `Remove @${contactUsername}?\n\nYour messages stay encrypted on your device. Re-scan their QR code to restore access.`,
+        `Remove ${contactNickname}?\n\nYour messages stay encrypted on your device. Re-scan their QR code to restore access.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -158,11 +158,11 @@ export default function ChatScreen({ route, navigation }) {
         <View style={styles.headerCenter}>
           <View style={[styles.avatar, isErased && styles.avatarErased]}>
             <Text style={styles.avatarText}>
-              {contactUsername[0].toUpperCase()}
+              {contactNickname[0].toUpperCase()}
             </Text>
           </View>
           <View>
-            <Text style={styles.headerName}>@{contactUsername}</Text>
+            <Text style={styles.headerName}>{contactNickname}</Text>
             <Text style={[styles.headerSub, isErased && styles.headerSubErased]}>
               {isErased ? '🔒 Contact erased' : 'End-to-end encrypted'}
             </Text>
@@ -187,7 +187,7 @@ export default function ChatScreen({ route, navigation }) {
         keyboardVerticalOffset={0}
       >
         {isErased && (
-          <ErasedBanner contactUsername={contactUsername} onReAdd={handleReAdd} />
+          <ErasedBanner contactNickname={contactNickname} onReAdd={handleReAdd} />
         )}
 
         {messages.length === 0 && !isErased ? (
@@ -220,7 +220,7 @@ export default function ChatScreen({ route, navigation }) {
         visible={sheetVisible}
         onClose={() => setSheetVisible(false)}
         onErase={handleErase}
-        contactUsername={contactUsername}
+        contactNickname={contactNickname}
       />
     </LinearGradient>
   );

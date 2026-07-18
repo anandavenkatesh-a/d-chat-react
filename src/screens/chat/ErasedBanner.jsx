@@ -6,14 +6,14 @@
 
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
-export default function ErasedBanner({ contactUsername, onReAdd }) {
+export default function ErasedBanner({ contactNickname, onReAdd }) {
   return (
     <View style={styles.wrapper}>
       <View style={styles.banner}>
         <Text style={styles.icon}>🔒</Text>
         <Text style={styles.title}>Contact erased</Text>
         <Text style={styles.body}>
-          You removed <Text style={styles.accent}>@{contactUsername}</Text>'s key.
+          You removed <Text style={styles.accent}>{contactNickname}</Text>'s key.
           Existing messages are still stored on your device but are unreadable
           until you re-add them.
         </Text>

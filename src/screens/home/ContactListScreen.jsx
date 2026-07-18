@@ -23,15 +23,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import useIdentityStore   from '../../store/useIdentityStore';
-import useContactsStore   from '../../store/useContactsStore';
-import useMessagesStore   from '../../store/useMessagesStore';
+import useIdentityStore from '../../store/useIdentityStore';
+import useContactsStore from '../../store/useContactsStore';
+import useMessagesStore from '../../store/useMessagesStore';
 import useConnectionStore from '../../store/useConnectionStore';
 import { clearAllNotifications } from '../../services/notifications';
 
 export default function ContactListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { username }               = useIdentityStore();
+  const { deviceId } = useIdentityStore();
   const { contacts, loadContacts } = useContactsStore();
   const { getMessages, loadMessages } = useMessagesStore();
   const { status, hasConnectedOnce } = useConnectionStore();
@@ -72,9 +72,9 @@ export default function ContactListScreen({ navigation }) {
   }
 
   function renderContact({ item }) {
-    const lastMsg  = getLastMessage(item.deviceId);
-    const unread   = getUnreadCount(item.deviceId);
-    const initial  = item.username[0].toUpperCase();
+    const lastMsg = getLastMessage(item.deviceId);
+    const unread = getUnreadCount(item.deviceId);
+    const initial = item.nickname[0].toUpperCase();
     const isErased = !item.publicKey;
 
     return (
@@ -83,7 +83,7 @@ export default function ContactListScreen({ navigation }) {
         activeOpacity={0.7}
         onPress={() => navigation.navigate('Chat', {
           contactDeviceId: item.deviceId,
-          contactUsername: item.username,
+          contactNickname: item.nickname,
         })}
       >
         <View style={[styles.avatar, isErased && styles.avatarErased]}>
@@ -97,7 +97,7 @@ export default function ContactListScreen({ navigation }) {
 
         <View style={styles.info}>
           <View style={styles.infoTop}>
-            <Text style={[styles.name, isErased && styles.nameErased]}>@{item.username}</Text>
+            <Text style={[styles.name, isErased && styles.nameErased]}>{item.nickname}</Text>
             <Text style={styles.time}>{formatTime(lastMsg)}</Text>
           </View>
           <Text
@@ -115,9 +115,9 @@ export default function ContactListScreen({ navigation }) {
     );
   }
 
-  const isConnected      = status === 'connected';
+  const isConnected = status === 'connected';
   const showFirstLaunchGate = !hasConnectedOnce; // full-screen block, first launch only
-  const showBanner       = hasConnectedOnce && !isConnected; // small banner after that
+  const showBanner = hasConnectedOnce && !isConnected; // small banner after that
 
   return (
     <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
@@ -128,7 +128,7 @@ export default function ContactListScreen({ navigation }) {
           <View style={styles.statusRow}>
             <View style={[styles.dot, isConnected ? styles.dotOn : styles.dotOff]} />
             <Text style={styles.statusText}>
-              @{username} · {isConnected ? 'connected' : status === 'connecting' ? 'connecting…' : 'offline'}
+              {deviceId ? deviceId.slice(0, 8) : '········'} · {isConnected ? 'connected' : status === 'connecting' ? 'connecting…' : 'offline'}
             </Text>
           </View>
         </View>
@@ -192,47 +192,47 @@ export default function ContactListScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  root:          { flex: 1 },
+  root: { flex: 1 },
 
-  header:        { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  wordmark:      { fontSize: 28, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
-  statusRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
-  dot:           { width: 7, height: 7, borderRadius: 4 },
-  dotOn:         { backgroundColor: '#34D399' },
-  dotOff:        { backgroundColor: '#F59E0B' },
-  statusText:    { fontSize: 12, color: '#4A4A6A' },
-  addBtn:        { backgroundColor: 'rgba(108,99,255,0.2)', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 16, borderWidth: 1, borderColor: 'rgba(108,99,255,0.4)' },
-  addBtnText:    { color: '#A78BFA', fontWeight: '700', fontSize: 14 },
+  header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  wordmark: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  dotOn: { backgroundColor: '#34D399' },
+  dotOff: { backgroundColor: '#F59E0B' },
+  statusText: { fontSize: 12, color: '#4A4A6A' },
+  addBtn: { backgroundColor: 'rgba(108,99,255,0.2)', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 16, borderWidth: 1, borderColor: 'rgba(108,99,255,0.4)' },
+  addBtnText: { color: '#A78BFA', fontWeight: '700', fontSize: 14 },
 
-  banner:        { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: 'rgba(245,158,11,0.1)', borderBottomWidth: 1, borderBottomColor: 'rgba(245,158,11,0.25)', paddingHorizontal: 20, paddingVertical: 12 },
-  bannerIcon:    { fontSize: 14, marginTop: 1 },
-  bannerText:    { flex: 1, fontSize: 12, color: '#FCD34D', lineHeight: 18 },
+  banner: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: 'rgba(245,158,11,0.1)', borderBottomWidth: 1, borderBottomColor: 'rgba(245,158,11,0.25)', paddingHorizontal: 20, paddingVertical: 12 },
+  bannerIcon: { fontSize: 14, marginTop: 1 },
+  bannerText: { flex: 1, fontSize: 12, color: '#FCD34D', lineHeight: 18 },
 
-  gate:          { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 16 },
-  gateTitle:     { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
-  gateSub:       { fontSize: 13, color: '#4A4A6A', textAlign: 'center', lineHeight: 20 },
+  gate: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 16 },
+  gateTitle: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
+  gateSub: { fontSize: 13, color: '#4A4A6A', textAlign: 'center', lineHeight: 20 },
 
-  list:          { paddingTop: 8 },
+  list: { paddingTop: 8 },
 
-  row:           { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
-  avatar:        { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(108,99,255,0.25)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  avatarErased:  { backgroundColor: 'rgba(248,113,113,0.1)' },
-  avatarText:    { fontSize: 20, fontWeight: '700', color: '#A78BFA' },
-  badge:         { position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#6C63FF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  badgeText:     { fontSize: 10, color: '#fff', fontWeight: '800' },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(108,99,255,0.25)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  avatarErased: { backgroundColor: 'rgba(248,113,113,0.1)' },
+  avatarText: { fontSize: 20, fontWeight: '700', color: '#A78BFA' },
+  badge: { position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#6C63FF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  badgeText: { fontSize: 10, color: '#fff', fontWeight: '800' },
 
-  info:          { flex: 1 },
-  infoTop:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  name:          { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
-  nameErased:    { color: '#6B6B8A' },
-  time:          { fontSize: 11, color: '#4A4A6A' },
-  preview:       { fontSize: 13, color: '#4A4A6A', lineHeight: 18 },
+  info: { flex: 1 },
+  infoTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  name: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  nameErased: { color: '#6B6B8A' },
+  time: { fontSize: 11, color: '#4A4A6A' },
+  preview: { fontSize: 13, color: '#4A4A6A', lineHeight: 18 },
   previewUnread: { color: '#C4B5FD', fontWeight: '500' },
   previewErased: { color: '#F87171', fontStyle: 'italic' },
 
-  empty:         { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
-  emptyIcon:     { fontSize: 52, marginBottom: 18 },
-  emptyTitle:    { fontSize: 22, fontWeight: '700', color: '#FFFFFF', marginBottom: 10 },
-  emptySub:      { fontSize: 14, color: '#4A4A6A', textAlign: 'center', lineHeight: 24 },
-  emptyAccent:   { color: '#A78BFA', fontWeight: '600' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  emptyIcon: { fontSize: 52, marginBottom: 18 },
+  emptyTitle: { fontSize: 22, fontWeight: '700', color: '#FFFFFF', marginBottom: 10 },
+  emptySub: { fontSize: 14, color: '#4A4A6A', textAlign: 'center', lineHeight: 24 },
+  emptyAccent: { color: '#A78BFA', fontWeight: '600' },
 });
