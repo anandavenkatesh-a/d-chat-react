@@ -1,28 +1,35 @@
 /**
  * deviceId.js
- * Computes the device_id used for relay routing.
+ * Computes the device_id used for relay routing AND identity proof.
  *
- * device_id = base64url( SHA256( publicKey ) )
+ * device_id = SHA256(signing_public_key), base64url-encoded
  *
- * There is no username anywhere in the app's identity model, so this
- * hash has zero relationship to any human-chosen name at any point —
- * it is derived purely from the Curve25519 public key generated on
- * this device. This is an opaque routing token; the relay only ever
- * sees this value, never the public key itself.
+ * Must exactly match how the relay computes it (see
+ * d-chat-relay-server/src/identityVerification.js's computeDeviceId)
+ * — both sides derive it identically, and the relay independently
+ * re-derives it from the presented signing_public_key on every
+ * register/connect handshake rather than trusting the claimed value.
+ *
+ * This deliberately does NOT fold the encryption public key into the
+ * derivation. The encryption key's authenticity is established
+ * separately, at QR-scan time — the scanning device trusts the
+ * (device_id, encryption_public_key) pair together because both were
+ * physically present in the same QR code shown in person. Binding it
+ * into device_id would add complexity without closing a gap that
+ * QR-based trust-on-first-use doesn't already close for that key.
  */
 
 import * as Crypto from 'expo-crypto';
 
 /**
- * @param {string} publicKeyB64 - The user's public key (base64)
- * @returns {Promise<string>}   - base64url-safe device_id string
+ * @param {string} signingPublicKeyB64 - the signing public key (base64)
+ * @returns {Promise<string>} base64url-safe device_id string
  */
-export async function computeDeviceId(publicKeyB64) {
+export async function computeDeviceId(signingPublicKeyB64) {
   const digest = await Crypto.digestStringAsync(
     Crypto.CryptoDigestAlgorithm.SHA256,
-    publicKeyB64,
+    signingPublicKeyB64,
     { encoding: Crypto.CryptoEncoding.BASE64 },
   );
-  // Strip base64 padding and make URL-safe (for WebSocket routing)
   return digest.replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' }[c]));
 }

@@ -1,20 +1,15 @@
 /**
  * App.js
  * Entry point — initializes DB, generates identity automatically (no
- * onboarding input required — no username, nothing to type), connects
- * to the relay, and shows the main app.
+ * input required), routes through registration (Functionality 1) if
+ * not yet confirmed by the relay, then shows the main app.
  *
- * There is no onboarding flow anymore: identity (keypair + device_id)
- * is generated the moment the app is first launched, entirely
- * automatically, inside useIdentityStore.loadIdentity(). By the time
- * this component's loading screen finishes, identity is guaranteed to
- * already exist — so the navigator never needs a separate "onboarding
- * stack" branch at all.
+ * Flow:
+ *   DB init → identity auto-generated if missing → isReady
+ *     → if !isRegistered: show RegistrationScreen (puzzle gauntlet)
+ *     → once relay confirms registration: main app stack
  */
 
-// MUST be the very first import — patches global.crypto.getRandomValues()
-// which tweetnacl (our E2EE library) requires for secure random number
-// generation. Without this, nacl.randomBytes() throws "no PRNG".
 import 'react-native-get-random-values';
 
 import { useEffect, useState } from 'react';
@@ -30,7 +25,7 @@ import useContactsStore      from './src/store/useContactsStore';
 import { useSocketSetup }    from './src/hooks/useSocketSetup';
 import { setupNotifications, clearAllNotifications } from './src/services/notifications';
 
-// Main app (no onboarding stack — identity is auto-generated, see above)
+import RegistrationScreen from './src/screens/onboarding/RegistrationScreen';
 import ContactListScreen  from './src/screens/home/ContactListScreen';
 import ChatScreen         from './src/screens/chat/ChatScreen';
 import AddContactScreen   from './src/screens/contacts/AddContactScreen';
@@ -41,9 +36,10 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false);
   const [error, setError]     = useState(null);
 
-  const { isReady, deviceId, loadIdentity } = useIdentityStore();
-  const { loadContacts }                    = useContactsStore();
+  const { isReady, deviceId, isRegistered, loadIdentity } = useIdentityStore();
+  const { loadContacts }                                  = useContactsStore();
 
+  // Only actually connects once isRegistered is true — see useSocketSetup.js
   useSocketSetup();
 
   useEffect(() => {
@@ -54,16 +50,14 @@ export default function App() {
 
   useEffect(() => {
     if (!dbReady) return;
-    // loadIdentity() automatically generates a fresh keypair + device_id
-    // on the very first call if none exists yet — no user input needed.
     loadIdentity().then(() => loadContacts());
   }, [dbReady]);
 
   useEffect(() => {
-    if (!deviceId) return;
+    if (!isRegistered) return; // don't bother with notifications before registered
     setupNotifications();
     clearAllNotifications();
-  }, [deviceId]);
+  }, [isRegistered]);
 
   if (error) {
     return (
@@ -87,9 +81,15 @@ export default function App() {
       <StatusBar style="light" />
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-          <Stack.Screen name="Home"       component={ContactListScreen} />
-          <Stack.Screen name="Chat"       component={ChatScreen} />
-          <Stack.Screen name="AddContact" component={AddContactScreen} />
+          {!isRegistered ? (
+            <Stack.Screen name="Registration" component={RegistrationScreen} />
+          ) : (
+            <>
+              <Stack.Screen name="Home"       component={ContactListScreen} />
+              <Stack.Screen name="Chat"       component={ChatScreen} />
+              <Stack.Screen name="AddContact" component={AddContactScreen} />
+            </>
+          )}
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

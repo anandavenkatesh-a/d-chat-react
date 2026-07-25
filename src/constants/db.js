@@ -9,19 +9,21 @@ export const TABLES = {
 // ── CREATE TABLE statements ───────────────────────────────────────────────────
 export const SQL_CREATE_IDENTITY = `
   CREATE TABLE IF NOT EXISTS ${TABLES.IDENTITY} (
-    id          INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row
-    device_id   TEXT    NOT NULL,
-    public_key  TEXT    NOT NULL
+    id                  INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row
+    device_id           TEXT    NOT NULL,
+    public_key          TEXT    NOT NULL,  -- encryption (Curve25519) public key
+    signing_public_key  TEXT,              -- Ed25519 public key, used for
+                                            -- identity proof with the relay
+    is_registered       INTEGER NOT NULL DEFAULT 0  -- 0/1 — has the relay
+                                            -- confirmed registration (passed
+                                            -- the puzzle gauntlet)?
   );
 `;
 
 export const SQL_CREATE_CONTACTS = `
   CREATE TABLE IF NOT EXISTS ${TABLES.CONTACTS} (
     device_id   TEXT    PRIMARY KEY,
-    nickname    TEXT    NOT NULL,  -- freeform local label YOU chose for
-                                    -- this contact when adding them; not
-                                    -- shared with or known by anyone else,
-                                    -- and not enforced unique in any way
+    nickname    TEXT    NOT NULL,
     public_key  TEXT,
     created_at  INTEGER NOT NULL
   );
