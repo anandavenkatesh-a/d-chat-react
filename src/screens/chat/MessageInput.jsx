@@ -1,44 +1,53 @@
 /**
  * MessageInput.jsx
  * Bottom input bar with a text field and send button.
- * Sends on button press or keyboard submit.
+ *
+ * Double-send guard: `sendingRef` (a ref, checked and set SYNCHRONOUSLY
+ * before any async work starts) makes it impossible for a rapid
+ * double-tap on Send — or a tap that lands awkwardly during a keyboard
+ * layout transition — to fire handleSend() twice for the same message.
+ * The earlier `sending` state alone wasn't sufficient: state updates
+ * are asynchronous in React, so two taps arriving within the same
+ * render frame could both read `sending` as still false before either
+ * update had applied. A ref updates immediately, synchronously, with
+ * no such window.
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, TextInput, TouchableOpacity, StyleSheet,
   Platform, ActivityIndicator,
 } from 'react-native';
-
-// Safe haptics wrapper — expo-haptics can crash on some Expo Go versions
-async function triggerHaptic() {
-  try {
-    const Haptics = await import('expo-haptics');
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  } catch {
-    // Haptics unavailable — silently skip
-  }
-}
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 
 export default function MessageInput({ onSend, disabled }) {
   const [text,    setText]    = useState('');
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false); // see file header comment
 
   async function handleSend() {
     const trimmed = text.trim();
-    if (!trimmed || sending || disabled) return;
+    if (!trimmed || disabled) return;
+    if (sendingRef.current) return; // synchronous guard — see header comment
+    sendingRef.current = true;
 
     setSending(true);
     setText('');
 
     try {
       await onSend(trimmed);
-      triggerHaptic();
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        // haptics unavailable — fine, ignore
+      }
     } catch (err) {
       console.error('[Input] Send error:', err.message);
       setText(trimmed); // restore on failure
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   }
 
@@ -67,7 +76,7 @@ export default function MessageInput({ onSend, disabled }) {
         >
           {sending
             ? <ActivityIndicator size="small" color="#fff" />
-            : <Text style={styles.sendIcon}>↑</Text>
+            : <Ionicons name="send" size={16} color="#FFFFFF" style={styles.sendIcon} />
           }
         </TouchableOpacity>
       </View>
@@ -82,5 +91,7 @@ const styles = StyleSheet.create({
   sendBtn:          { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
   sendBtnActive:    { backgroundColor: '#6C63FF' },
   sendBtnInactive:  { backgroundColor: 'rgba(108,99,255,0.2)' },
-  sendIcon:         { fontSize: 16, color: '#FFFFFF', fontWeight: '700' },
+  // Paper plane icons visually sit slightly left-of-center by default —
+  // nudging right centers it more precisely inside the round button.
+  sendIcon:         { marginLeft: 2 },
 });

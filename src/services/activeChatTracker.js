@@ -1,25 +1,23 @@
 /**
  * activeChatTracker.js
- * Tiny module-level tracker for "which chat screen is currently open".
+ * Tracks which contact's chat screen is currently open on-screen.
+ * Stored on globalThis so it survives Fast Refresh during development.
  *
- * Used to suppress push notifications for a contact whose chat the user
- * is already actively viewing — no point buzzing them about a message
- * they can already see on screen.
- *
- * Kept on globalThis (like socket.js's state) so it survives Metro Fast
- * Refresh without losing track of the active screen mid-session.
+ * Used by onMessage.js to decide: if a message arrives from the
+ * contact whose chat is currently open, play a short sound instead of
+ * firing a system notification (the user already sees it appear).
  */
 
-const _tracker = (globalThis.__dchatActiveChatTracker ??= { deviceId: null });
+const _state = (globalThis.__dchatActiveChatState ??= { activeChatDeviceId: null });
 
 export function setActiveChatDeviceId(deviceId) {
-  _tracker.deviceId = deviceId;
+  _state.activeChatDeviceId = deviceId;
 }
 
 export function clearActiveChatDeviceId() {
-  _tracker.deviceId = null;
+  _state.activeChatDeviceId = null;
 }
 
 export function getActiveChatDeviceId() {
-  return _tracker.deviceId;
+  return _state.activeChatDeviceId;
 }

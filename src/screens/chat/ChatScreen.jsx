@@ -2,20 +2,36 @@
  * ChatScreen.jsx
  * Full chat thread for a single contact.
  *
- * Bug fix: "seen" (✓✓✓) must only be sent when the user's screen is
- * actually ON and this specific chat is the focused screen — not
- * merely when this component happens to still be mounted while a
- * message arrives (e.g. phone screen off, app kept alive in the
- * background by the persistent Tor/WebSocket connection). Previously,
- * markAsSeen() fired purely off `messages.length` changing, with no
- * check on AppState or navigation focus, so a message could be
- * acknowledged as "seen" while the recipient's screen was off.
+ * Keyboard handling — full history, for whoever revisits this next:
+ *   1. behavior="height" on Android + keyboardVerticalOffset={0}: the
+ *      original, confirmed-working baseline. Only issue: the input
+ *      stayed visibly elevated for a moment after the keyboard closed
+ *      (a minor cosmetic bug, not a functional one).
+ *   2. Assumed keyboardVerticalOffset needed to account for the custom
+ *      header's real height (measured via onLayout) instead of being
+ *      0. This was WRONG — keyboardVerticalOffset is for headers that
+ *      float OVER KeyboardAvoidingView via absolute positioning, where
+ *      the view's own top edge is hidden behind them. Our header is a
+ *      normal flex sibling that already takes real layout space —
+ *      KeyboardAvoidingView already starts below it correctly on its
+ *      own. Setting the offset to headerHeight told it "there's ~70-
+ *      90px of space above you that isn't really there," causing it
+ *      to shrink LESS than the actual keyboard height — leaving
+ *      exactly that much gap between the input and the keyboard while
+ *      typing. Reverted to 0, which is actually correct here.
+ *   3. The original (minor) "elevated after closing" issue is instead
+ *      fixed via a `key` prop on KeyboardAvoidingView that changes on
+ *      every keyboardDidHide event — forcing a full unmount/remount
+ *      so its internal keyboard-visible state (which can get stuck at
+ *      Android level, a separate, well-documented issue) always
+ *      starts genuinely fresh, rather than trying to fix a stuck
+ *      value via more prop tuning.
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
-  Alert, KeyboardAvoidingView, Platform, AppState,
+  Alert, KeyboardAvoidingView, Keyboard, Platform, AppState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
@@ -37,6 +53,18 @@ export default function ChatScreen({ route, navigation }) {
   const appStateRef = useRef(AppState.currentState);
   const isFocused = useIsFocused();
 
+  // Forces a full unmount/remount of KeyboardAvoidingView the instant
+  // the keyboard closes — see file header point 3 for why.
+  const [kbResetKey, setKbResetKey] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKbResetKey((k) => k + 1);
+    });
+    return () => hideSub.remove();
+  }, []);
+
   const { privateKey }                                          = useIdentityStore();
   const { getContact, eraseContact }                            = useContactsStore();
   const { loadMessages, sendMessage, markAsSeen, getMessages }  = useMessagesStore();
@@ -45,13 +73,6 @@ export default function ChatScreen({ route, navigation }) {
   const messages = getMessages(contactDeviceId);
   const isErased = !contact;
 
-  /**
-   * The ONLY correct condition for "the user is actually looking at this
-   * chat right now": app is foregrounded AND this screen is the focused
-   * route in the navigator. Screen-off, backgrounded, or navigated-away
-   * (even if this component is still mounted deeper in the stack) must
-   * never satisfy this.
-   */
   function isActivelyViewing() {
     return AppState.currentState === 'active' && isFocused;
   }
@@ -62,15 +83,11 @@ export default function ChatScreen({ route, navigation }) {
     }
   }
 
-  // Load messages once on mount; only mark seen if genuinely being viewed
   useEffect(() => {
     loadMessages(contactDeviceId);
     markSeenIfActivelyViewing();
   }, [contactDeviceId]);
 
-  // New messages arrived — only mark seen if genuinely being viewed,
-  // and scroll to bottom regardless (that's a harmless UI action, not
-  // a privacy-sensitive acknowledgement).
   useEffect(() => {
     if (messages.length > 0) {
       markSeenIfActivelyViewing();
@@ -78,10 +95,6 @@ export default function ChatScreen({ route, navigation }) {
     }
   }, [messages.length]);
 
-  // Re-check when the app returns to foreground OR this screen regains
-  // focus — this is what correctly marks messages as seen the moment
-  // the user actually turns the screen back on / navigates back here,
-  // rather than silently and prematurely when they arrived.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const wasBackground = appStateRef.current !== 'active';
@@ -99,7 +112,6 @@ export default function ChatScreen({ route, navigation }) {
     }
   }, [isFocused]);
 
-  // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async (plaintext) => {
     if (!contact) return;
     await sendMessage({
@@ -110,7 +122,6 @@ export default function ChatScreen({ route, navigation }) {
     });
   }, [contact, contactDeviceId, privateKey]);
 
-  // ── Erase ─────────────────────────────────────────────────────────────────
   async function handleErase() {
     setSheetVisible(false);
     setTimeout(() => {
@@ -149,7 +160,6 @@ export default function ChatScreen({ route, navigation }) {
   return (
     <LinearGradient colors={['#0D0D0D', '#1A1035']} style={styles.root}>
 
-      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>←</Text>
@@ -182,6 +192,7 @@ export default function ChatScreen({ route, navigation }) {
       </View>
 
       <KeyboardAvoidingView
+        key={kbResetKey}
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
