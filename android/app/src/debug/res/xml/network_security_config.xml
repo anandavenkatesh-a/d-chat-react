@@ -17,6 +17,7 @@
         <!-- Known dev machine IPs seen so far — add new ones here as needed -->
         <domain includeSubdomains="false">192.168.0.103</domain>
         <domain includeSubdomains="false">192.168.0.107</domain>
+        <domain includeSubdomains="false">192.168.0.101</domain>
     </domain-config>
 
     <!-- Relay's .onion hidden service — same as release, see main config

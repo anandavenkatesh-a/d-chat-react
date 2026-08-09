@@ -2,19 +2,14 @@
  * useIdentityStore.js
  * Global state for the current user's identity.
  *
- * Identity now consists of TWO keypairs, generated together on first
- * launch, with zero user input required for either:
- *   - encryption keypair (Curve25519, via keyPair.js) — for E2EE
- *   - signing keypair (Ed25519, via signingKeyPair.js) — for proving
- *     device_id ownership to the relay (registration + connect)
- *
- * device_id = SHA256(signing_public_key)
- *
- * isRegistered tracks whether the relay has confirmed registration
- * (passed the puzzle gauntlet) — this is separate from whether local
- * keys exist, since key generation is instant and local, but
- * registration requires a live round trip with the relay and solving
- * the puzzle challenge.
+ * ⚠️ Behavior change: loadIdentity() no longer auto-generates a fresh
+ * identity when none exists. On a genuinely first-ever launch, it now
+ * just sets isReady: true with everything else null — App.js detects
+ * this (!deviceId) and shows WelcomeChoiceScreen, letting the user
+ * explicitly choose "Create new account" (which calls createIdentity()
+ * directly) or "Restore from backup" (which calls importIdentity()
+ * via the backup flow). Both of those already existed as store
+ * actions; only the automatic fallback call was removed.
  */
 
 import { create } from 'zustand';
@@ -38,18 +33,9 @@ const useIdentityStore = create((set, get) => ({
 
   /**
    * Called on app start after DB is initialized. Loads identity from
-   * SQLite + private keys from SecureStore. Generates a fresh identity
-   * automatically if none exists yet (first launch) — no user input.
-   * Also handles the upgrade path for an install that has an
-   * encryption keypair but no signing keypair yet (pre-registration
-   * schema), generating just the missing signing keypair rather than
-   * a whole fresh identity (preserves existing device_id... actually
-   * NOTE: device_id changes once a signing key is introduced, since
-   * it's now derived from the signing key rather than being absent —
-   * pre-registration installs never had a stable device_id derivation
-   * tied to a signing key at all, so this is a one-time, unavoidable
-   * device_id change for anyone upgrading from a pre-registration
-   * build. Their existing contacts will need to re-exchange QR codes.
+   * SQLite + private keys from SecureStore if they exist. If none
+   * exist yet, no longer auto-generates anything — just marks isReady
+   * so App.js can route to WelcomeChoiceScreen and let the user pick.
    */
   loadIdentity: async () => {
     try {
@@ -68,9 +54,7 @@ const useIdentityStore = create((set, get) => ({
           isReady:           true,
         });
       } else {
-        // First launch ever, OR an upgrade from a pre-signing-key
-        // install — either way, generate whatever's missing.
-        await get().createIdentity();
+        set({ isReady: true });
       }
     } catch (err) {
       console.error('[Identity] Failed to load identity:', err);
@@ -78,10 +62,6 @@ const useIdentityStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Generates a fresh identity (both keypairs) and persists everything.
-   * Called automatically — never requires user input.
-   */
   createIdentity: async () => {
     const { publicKey, privateKey } = generateKeyPair();
     const { publicKey: signingPublicKey, privateKey: signingPrivateKey } = generateSigningKeyPair();
@@ -101,22 +81,36 @@ const useIdentityStore = create((set, get) => ({
     return { deviceId, publicKey, signingPublicKey };
   },
 
-  /**
-   * Called once the relay confirms registration succeeded (register_ack
-   * with success:true). Persists locally so the app never has to
-   * repeat the puzzle gauntlet on future launches.
-   */
+  importIdentity: async (identity) => {
+    await savePrivateKey(identity.privateKey);
+    await saveSigningPrivateKey(identity.signingPrivateKey);
+    await saveIdentity({
+      deviceId: identity.deviceId,
+      publicKey: identity.publicKey,
+      signingPublicKey: identity.signingPublicKey,
+    });
+    await markAsRegistered();
+
+    set({
+      deviceId:          identity.deviceId,
+      publicKey:         identity.publicKey,
+      privateKey:        identity.privateKey,
+      signingPublicKey:  identity.signingPublicKey,
+      signingPrivateKey: identity.signingPrivateKey,
+      isRegistered:      true,
+      isReady:           true,
+    });
+  },
+
   confirmRegistered: async () => {
     await markAsRegistered();
     set({ isRegistered: true });
   },
 
-  /**
-   * QR payload for sharing identity with contacts. Contains only the
-   * device_id and ENCRYPTION public key — the signing public key is
-   * never shared this way, since it's only ever needed by the relay
-   * for identity proof, not by other users for messaging.
-   */
+  resetRegistration: () => {
+    set({ isRegistered: false });
+  },
+
   getQRPayload: () => {
     const { deviceId, publicKey } = get();
     return JSON.stringify({ device_id: deviceId, public_key: publicKey });

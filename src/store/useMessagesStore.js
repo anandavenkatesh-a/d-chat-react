@@ -2,16 +2,24 @@
  * useMessagesStore.js
  * Global state for messages per contact + sending logic.
  *
- * Handles:
- *   - Loading messages for a chat from SQLite
- *   - Sending a message (encrypt → insert locally → emit via WebSocket)
- *   - Receiving new messages (triggered by messageRouter callback)
- *   - Status updates (sent / stored / seen)
- *   - Sending ack_seen when a chat is opened
+ * ⚠️ FIX: markAsSeen() previously updated the in-memory badge-relevant
+ * state ONLY AFTER a sequential await-loop of individual SQLite
+ * writes (one per unseen message) had fully completed. If a user read
+ * multiple messages and navigated back to the contact list quickly —
+ * a completely normal, fast interaction — there was a real window
+ * where the in-memory state hadn't been updated yet, so the unread
+ * badge stayed stale until that background work eventually finished
+ * (which is why it only seemed to clear "the second time" — really,
+ * enough time had just passed by then for the delayed update to
+ * land). Fixed by updating the in-memory state FIRST, synchronously,
+ * before any awaited I/O — the badge now clears the instant
+ * markAsSeen() is called, with the SQLite writes and relay
+ * notifications happening in the background afterward, in parallel
+ * rather than one at a time.
  */
 
 import { create } from 'zustand';
-import { generateUUID } from '../utils/uuid';
+import * as Crypto from 'expo-crypto';
 
 import { send } from '../services/socket';
 import { encryptMessage } from '../crypto/encrypt';
@@ -22,14 +30,13 @@ import {
 } from '../db/messages';
 import { MSG_STATUS } from '../constants/config';
 
+const DUPLICATE_SEND_WINDOW_MS = 2000;
+let _lastSendKey = null;
+let _lastSendAt = 0;
+
 const useMessagesStore = create((set, get) => ({
-  // messages per deviceId: { [deviceId]: Message[] }
   messagesByContact: {},
 
-  /**
-   * Load all messages for a contact from SQLite into state.
-   * Called when opening a chat screen.
-   */
   loadMessages: async (deviceId) => {
     const messages = await getMessagesForContact(deviceId);
     set((s) => ({
@@ -37,20 +44,21 @@ const useMessagesStore = create((set, get) => ({
     }));
   },
 
-  /**
-   * Send a message to a contact.
-   *  1. Encrypt with recipient's public key
-   *  2. Insert into local SQLite immediately (optimistic)
-   *  3. Emit 'send' event to relay
-   */
   sendMessage: async ({ plaintext, recipientDeviceId, recipientPublicKey, senderPrivateKey }) => {
-    const msg_id    = generateUUID();
+    const dedupeKey = `${recipientDeviceId}:${plaintext}`;
+    const now = Date.now();
+    if (_lastSendKey === dedupeKey && (now - _lastSendAt) < DUPLICATE_SEND_WINDOW_MS) {
+      console.warn('[Messages] Ignored duplicate sendMessage() call within', DUPLICATE_SEND_WINDOW_MS, 'ms');
+      return null;
+    }
+    _lastSendKey = dedupeKey;
+    _lastSendAt = now;
+
+    const msg_id    = Crypto.randomUUID();
     const timestamp = Date.now();
 
-    // Encrypt
     const ciphertext = encryptMessage(plaintext, recipientPublicKey, senderPrivateKey);
 
-    // Optimistic local insert — status starts as 'sent' (waiting for relay ACK)
     const message = {
       id:         msg_id,
       deviceId:   recipientDeviceId,
@@ -63,7 +71,6 @@ const useMessagesStore = create((set, get) => ({
 
     await insertMessage(message);
 
-    // Add to state immediately so UI updates without DB round-trip
     set((s) => {
       const existing = s.messagesByContact[recipientDeviceId] || [];
       return {
@@ -74,27 +81,18 @@ const useMessagesStore = create((set, get) => ({
       };
     });
 
-    // Emit to relay
     send({ type: 'send', to: recipientDeviceId, msg_id, payload: ciphertext });
 
     return msg_id;
   },
 
-  /**
-   * Called by messageRouter when a new inbound message arrives.
-   * Appends to the relevant contact's message list in state.
-   */
-  receiveMessage: async ({ fromDeviceId, msg_id, plaintext }) => {
+  receiveMessage: async ({ fromDeviceId }) => {
     const messages = await getMessagesForContact(fromDeviceId);
     set((s) => ({
       messagesByContact: { ...s.messagesByContact, [fromDeviceId]: messages },
     }));
   },
 
-  /**
-   * Called by messageRouter when an ACK event updates a message's status.
-   * Updates the message in state without reloading from DB.
-   */
   updateStatus: ({ msg_id, status }) => {
     set((s) => {
       const updated = {};
@@ -107,34 +105,29 @@ const useMessagesStore = create((set, get) => ({
     });
   },
 
-  /**
-   * Mark all inbound messages in a chat as seen.
-   * Called when the user opens a chat screen.
-   * Sends ack_seen for each unseen message so the sender gets ✓✓✓.
-   */
   markAsSeen: async (deviceId) => {
     const messages = get().messagesByContact[deviceId] || [];
     const unseen   = messages.filter(
       (m) => m.direction === 'in' && m.status !== MSG_STATUS.SEEN
     );
 
-    for (const m of unseen) {
-      await updateMessageStatus(m.id, MSG_STATUS.SEEN);
-      // Notify sender via relay
-      send({ type: 'ack_seen', msg_id: m.id, to: deviceId });
-    }
+    if (unseen.length === 0) return;
 
-    // Update state
-    if (unseen.length > 0) {
-      set((s) => ({
-        messagesByContact: {
-          ...s.messagesByContact,
-          [deviceId]: (s.messagesByContact[deviceId] || []).map((m) =>
-            m.direction === 'in' ? { ...m, status: MSG_STATUS.SEEN } : m
-          ),
-        },
-      }));
-    }
+    set((s) => ({
+      messagesByContact: {
+        ...s.messagesByContact,
+        [deviceId]: (s.messagesByContact[deviceId] || []).map((m) =>
+          m.direction === 'in' ? { ...m, status: MSG_STATUS.SEEN } : m
+        ),
+      },
+    }));
+
+    await Promise.all(
+      unseen.map(async (m) => {
+        await updateMessageStatus(m.id, MSG_STATUS.SEEN);
+        send({ type: 'ack_seen', msg_id: m.id, to: deviceId });
+      })
+    );
   },
 
   getMessages: (deviceId) => {

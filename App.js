@@ -1,13 +1,18 @@
 /**
  * App.js
- * Entry point — initializes DB, generates identity automatically (no
- * input required), routes through registration (Functionality 1) if
- * not yet confirmed by the relay, then shows the main app.
+ * Entry point.
  *
- * Flow:
- *   DB init → identity auto-generated if missing → isReady
- *     → if !isRegistered: show RegistrationScreen (puzzle gauntlet)
- *     → once relay confirms registration: main app stack
+ * Routing, updated:
+ *   DB init → identity loaded (may be null now — no more auto-create)
+ *     → if !deviceId:      WelcomeChoiceScreen (new account vs restore)
+ *     → if deviceId && !isRegistered: RegistrationScreen (puzzle gauntlet)
+ *     → else:              main app stack
+ *
+ * A restored identity (via WelcomeChoiceScreen's "Restore from Backup")
+ * sets deviceId AND isRegistered together, so it skips straight to the
+ * main app stack, correctly bypassing the puzzle — a genuinely new
+ * identity only sets deviceId, so it still goes through registration
+ * as before.
  */
 
 import 'react-native-get-random-values';
@@ -25,10 +30,12 @@ import useContactsStore      from './src/store/useContactsStore';
 import { useSocketSetup }    from './src/hooks/useSocketSetup';
 import { setupNotifications, clearAllNotifications } from './src/services/notifications';
 
-import RegistrationScreen from './src/screens/onboarding/RegistrationScreen';
-import ContactListScreen  from './src/screens/home/ContactListScreen';
-import ChatScreen         from './src/screens/chat/ChatScreen';
-import AddContactScreen   from './src/screens/contacts/AddContactScreen';
+import WelcomeChoiceScreen from './src/screens/onboarding/WelcomeChoiceScreen';
+import RegistrationScreen  from './src/screens/onboarding/RegistrationScreen';
+import BackupScreen        from './src/screens/onboarding/BackupScreen';
+import ContactListScreen   from './src/screens/home/ContactListScreen';
+import ChatScreen          from './src/screens/chat/ChatScreen';
+import AddContactScreen    from './src/screens/contacts/AddContactScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -39,7 +46,6 @@ export default function App() {
   const { isReady, deviceId, isRegistered, loadIdentity } = useIdentityStore();
   const { loadContacts }                                  = useContactsStore();
 
-  // Only actually connects once isRegistered is true — see useSocketSetup.js
   useSocketSetup();
 
   useEffect(() => {
@@ -54,7 +60,7 @@ export default function App() {
   }, [dbReady]);
 
   useEffect(() => {
-    if (!isRegistered) return; // don't bother with notifications before registered
+    if (!isRegistered) return;
     setupNotifications();
     clearAllNotifications();
   }, [isRegistered]);
@@ -81,13 +87,16 @@ export default function App() {
       <StatusBar style="light" />
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-          {!isRegistered ? (
+          {!deviceId ? (
+            <Stack.Screen name="WelcomeChoice" component={WelcomeChoiceScreen} />
+          ) : !isRegistered ? (
             <Stack.Screen name="Registration" component={RegistrationScreen} />
           ) : (
             <>
               <Stack.Screen name="Home"       component={ContactListScreen} />
               <Stack.Screen name="Chat"       component={ChatScreen} />
               <Stack.Screen name="AddContact" component={AddContactScreen} />
+              <Stack.Screen name="Backup"     component={BackupScreen} />
             </>
           )}
         </Stack.Navigator>

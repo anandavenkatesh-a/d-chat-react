@@ -139,6 +139,13 @@ export default function ContactListScreen({ navigation }) {
         >
           <Text style={styles.addBtnText}>+ Add</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => navigation.navigate('Backup')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.addBtnText}>+ Backup</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Persistent banner — shown after the first successful connection,

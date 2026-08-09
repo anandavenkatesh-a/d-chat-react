@@ -1,31 +1,16 @@
 /**
  * RegistrationScreen.jsx
  *
- * Replaces the number-pad + 5-second countdown with a simple tap
- * counter: the user taps a button every time they hear a high-pitched
- * tone, in real time, DURING listening — not recalled and typed
- * afterward. The instant the final chunk finishes playing, whatever
- * count they've accumulated is submitted automatically. No keyboard
- * is involved anywhere on this screen anymore, which also means the
- * KeyboardAvoidingView / Android Fragment-isolation issues that
- * affected the previous number-pad version simply don't apply here.
+ * Instructions stage redesigned: previously a single paragraph with
+ * manual '\n' line breaks, which looked scattered and didn't reflow
+ * naturally across different screen widths. Replaced with a
+ * structured, scannable 3-step layout (icon + short title +
+ * description per step) plus a smaller, visually separated privacy
+ * footnote — much easier to read at a glance than one dense block of
+ * text.
  *
- * Submission timing: the relay sends `chunk_duration_ms` explicitly
- * (see puzzles.js's CHUNK_DURATION_MS) in puzzle_session_start, so the
- * client knows precisely how long the final chunk's audio actually
- * plays for — the count is submitted that many ms after the final
- * chunk is received, matching when a human would actually finish
- * hearing it, not the moment the network message itself arrives.
- *
- * Two submission triggers, whichever fires first (submitCurrentAnswer
- * is idempotent — only the first call actually sends anything):
- *   1. The client's own local timer, fired after the final chunk's
- *      playback duration has elapsed.
- *   2. The relay's puzzle_answer_window signal, as a backup in case
- *      the local timer is somehow delayed or never fires. The relay's
- *      existing ANSWER_WINDOW_MS (5s) still applies server-side as a
- *      generous safety margin for message transit time over Tor —
- *      it's just no longer shown to the user as a countdown.
+ * Everything else (tap-counter puzzle mechanics, audio playback,
+ * auto-submit after the final chunk) is unchanged from before.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -45,6 +30,12 @@ const STAGE_LISTENING    = 'listening';
 const STAGE_CHECKING     = 'checking';
 const STAGE_SUCCESS      = 'success';
 const STAGE_FAILED       = 'failed';
+
+const STEPS = [
+  { icon: '🎧', title: 'Listen',   desc: "You'll hear a series of tones over about a minute, mixed in with background sound." },
+  { icon: '👆', title: 'Tap',      desc: 'Tap the button the instant you hear a HIGH-pitched tone — right when you hear it.' },
+  { icon: '✅', title: 'Done',     desc: 'Your count submits automatically the moment the audio ends. No typing needed.' },
+];
 
 export default function RegistrationScreen() {
   const insets = useSafeAreaInsets();
@@ -154,16 +145,28 @@ export default function RegistrationScreen() {
 
       {stage === STAGE_INSTRUCTIONS && (
         <View style={styles.instructionsWrap}>
+          <Text style={styles.headerIcon}>🎧</Text>
           <Text style={styles.title}>One quick step</Text>
-          <Text style={styles.subtitle}>
-            Listen closely through the background sound. Every time{'\n'}
-            you hear a HIGH-pitched tone, tap the button — right when{'\n'}
-            you hear it, not afterward. This helps keep the network{'\n'}
-            free of automated abuse, without collecting any personal{'\n'}
-            information about you.{'\n\n'}
-            It takes about a minute, and submits automatically the{'\n'}
-            moment the audio ends.
+          <Text style={styles.tagline}>A quick listening check to keep D-Chat free of automated abuse</Text>
+
+          <View style={styles.stepsCard}>
+            {STEPS.map((step, i) => (
+              <View key={step.title} style={[styles.stepRow, i < STEPS.length - 1 && styles.stepRowDivider]}>
+                <View style={styles.stepIconCircle}>
+                  <Text style={styles.stepIcon}>{step.icon}</Text>
+                </View>
+                <View style={styles.stepTextCol}>
+                  <Text style={styles.stepTitle}>{step.title}</Text>
+                  <Text style={styles.stepDesc}>{step.desc}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <Text style={styles.privacyNote}>
+            🔒 No personal information is ever collected — this only measures your response to sound.
           </Text>
+
           <TouchableOpacity style={styles.readyBtn} onPress={beginPuzzle} activeOpacity={0.85}>
             <Text style={styles.readyBtnText}>I'm ready</Text>
           </TouchableOpacity>
@@ -237,12 +240,25 @@ export default function RegistrationScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:          { flex: 1, backgroundColor: '#0D0D0D', alignItems: 'center', paddingHorizontal: 32 },
+  root:          { flex: 1, backgroundColor: '#0D0D0D', alignItems: 'center', paddingHorizontal: 28 },
 
-  instructionsWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 28 },
-  title:         { fontSize: 26, fontWeight: '800', color: '#FFFFFF', textAlign: 'center' },
-  subtitle:      { fontSize: 14, color: '#6B6B8A', textAlign: 'center', lineHeight: 22 },
-  readyBtn:      { backgroundColor: '#6C63FF', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 48 },
+  instructionsWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%' },
+  headerIcon:    { fontSize: 44, marginBottom: 12 },
+  title:         { fontSize: 24, fontWeight: '800', color: '#FFFFFF', textAlign: 'center', marginBottom: 8 },
+  tagline:       { fontSize: 13, color: '#6B6B8A', textAlign: 'center', lineHeight: 19, marginBottom: 28, maxWidth: 280 },
+
+  stepsCard:     { width: '100%', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', paddingHorizontal: 18, marginBottom: 20 },
+  stepRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, gap: 14 },
+  stepRowDivider:{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  stepIconCircle:{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(108,99,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  stepIcon:      { fontSize: 19 },
+  stepTextCol:   { flex: 1 },
+  stepTitle:     { fontSize: 15, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 },
+  stepDesc:      { fontSize: 12.5, color: '#8888A5', lineHeight: 18 },
+
+  privacyNote:   { fontSize: 11.5, color: '#4A4A6A', textAlign: 'center', lineHeight: 17, marginBottom: 28, maxWidth: 280 },
+
+  readyBtn:      { backgroundColor: '#6C63FF', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 56, width: '100%', alignItems: 'center' },
   readyBtnText:  { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
 
   mainArea:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%' },
