@@ -137,14 +137,14 @@ export default function ContactListScreen({ navigation }) {
           onPress={() => navigation.navigate('AddContact')}
           activeOpacity={0.8}
         >
-          <Text style={styles.addBtnText}>+ Add</Text>
+          <Text style={styles.addBtnText}> Add </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.addBtn}
           onPress={() => navigation.navigate('Backup')}
           activeOpacity={0.8}
         >
-          <Text style={styles.addBtnText}>+ Backup</Text>
+          <Text style={styles.addBtnText}> Backup</Text>
         </TouchableOpacity>
       </View>
 

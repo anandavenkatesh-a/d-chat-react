@@ -1,21 +1,23 @@
 /**
  * BackupScreen.jsx
  *
- * Changes:
- *  1. includeMessages now defaults to true (chat history included by default)
- *  2. Export/import now show a REAL progress bar driven by the KDF's
- *     onProgress callback (see backupCrypto.js) — the earlier version
- *     showed a spinner, but the encryption call was synchronous and
- *     blocking, so the phone would freeze before that spinner ever
- *     got a chance to actually paint. Now that the KDF yields
- *     periodically, the UI stays responsive and this progress bar
- *     genuinely animates throughout the whole operation.
+ * ⚠️ Progress indicator changed from a percentage bar back to a
+ * spinner: the KDF now runs via react-native-argon2 (a native module
+ * — see backupCrypto.js), which has no progress callback at all,
+ * unlike the earlier hand-rolled, chunked JS loop. A spinner is the
+ * honest representation of what's actually knowable here — a
+ * fabricated percentage would be worse than no percentage. The good
+ * news: since the computation now happens in native code rather than
+ * on the JS thread, the UI genuinely stays responsive throughout —
+ * this spinner will actually animate, unlike the original bug where
+ * a blocking synchronous call prevented any indicator from painting
+ * at all before the freeze began.
  */
 
 import { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch,
-  TextInput, Alert,
+  TextInput, ActivityIndicator, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -31,15 +33,12 @@ export default function BackupScreen({ navigation }) {
   const [includeMessages, setIncludeMessages] = useState(true);
   const [exportPassword, setExportPassword] = useState('');
   const [exportPasswordConfirm, setExportPasswordConfirm] = useState('');
-  const [exportProgress, setExportProgress] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [pickedEnvelope, setPickedEnvelope] = useState(null);
   const [importPassword, setImportPassword] = useState('');
-  const [importProgress, setImportProgress] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
   const [picking, setPicking] = useState(false);
-
-  const isExporting = exportProgress !== null;
-  const isImporting = importProgress !== null;
 
   async function handleExport() {
     if (exportPassword.length < 6) {
@@ -51,13 +50,12 @@ export default function BackupScreen({ navigation }) {
       return;
     }
 
-    setExportProgress(0);
+    setIsExporting(true);
     try {
       const uri = await exportBackup({
         includeContacts,
         includeMessages,
         password: exportPassword,
-        onProgress: setExportProgress,
       });
       await shareBackup(uri);
       deleteBackupFile(uri);
@@ -66,7 +64,7 @@ export default function BackupScreen({ navigation }) {
     } catch (err) {
       Alert.alert('Export failed', err.message);
     } finally {
-      setExportProgress(null);
+      setIsExporting(false);
     }
   }
 
@@ -99,9 +97,9 @@ export default function BackupScreen({ navigation }) {
   }
 
   async function doImport() {
-    setImportProgress(0);
+    setIsImporting(true);
     try {
-      const result = await decryptAndImportBackup(pickedEnvelope, importPassword, setImportProgress);
+      const result = await decryptAndImportBackup(pickedEnvelope, importPassword);
       Alert.alert(
         'Restored',
         `Identity restored.\n` +
@@ -115,7 +113,7 @@ export default function BackupScreen({ navigation }) {
         Alert.alert('Restore failed', err.message);
       }
     } finally {
-      setImportProgress(null);
+      setIsImporting(false);
     }
   }
 
@@ -163,13 +161,12 @@ export default function BackupScreen({ navigation }) {
           There's no way to recover it if you forget it.
         </Text>
 
-        {isExporting ? (
-          <ProgressBar fraction={exportProgress} label="Encrypting…" />
-        ) : (
-          <TouchableOpacity style={styles.actionBtn} onPress={handleExport} activeOpacity={0.85}>
-            <Text style={styles.actionBtnText}>Export Backup</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={styles.actionBtn} onPress={handleExport} disabled={isExporting} activeOpacity={0.85}>
+          {isExporting
+            ? <View style={styles.busyRow}><ActivityIndicator color="#fff" /><Text style={styles.actionBtnText}>Encrypting…</Text></View>
+            : <Text style={styles.actionBtnText}>Export Backup</Text>
+          }
+        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
@@ -213,32 +210,19 @@ export default function BackupScreen({ navigation }) {
               editable={!isImporting}
             />
 
-            {isImporting ? (
-              <ProgressBar fraction={importProgress} label="Decrypting…" />
-            ) : (
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.restoreBtn]}
-                onPress={handleDecryptAndImport}
-                disabled={importPassword.length === 0}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.restoreBtnText}>Decrypt & Restore</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.restoreBtn]}
+              onPress={handleDecryptAndImport}
+              disabled={isImporting || importPassword.length === 0}
+              activeOpacity={0.85}
+            >
+              {isImporting
+                ? <View style={styles.busyRow}><ActivityIndicator color="#A78BFA" /><Text style={styles.restoreBtnText}>Decrypting…</Text></View>
+                : <Text style={styles.restoreBtnText}>Decrypt & Restore</Text>
+              }
+            </TouchableOpacity>
           </>
         )}
-      </View>
-    </View>
-  );
-}
-
-function ProgressBar({ fraction, label }) {
-  const pct = Math.round((fraction ?? 0) * 100);
-  return (
-    <View style={styles.progressWrap}>
-      <Text style={styles.progressLabel}>{label} {pct}%</Text>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${pct}%` }]} />
       </View>
     </View>
   );
@@ -266,12 +250,9 @@ const styles = StyleSheet.create({
   restoreBtn:      { backgroundColor: 'rgba(108,99,255,0.15)', borderWidth: 1, borderColor: '#6C63FF' },
   restoreBtnText:  { color: '#A78BFA', fontWeight: '700', fontSize: 15 },
 
+  busyRow:       { flexDirection: 'row', alignItems: 'center', gap: 10 },
+
   pickedInfoBox:   { backgroundColor: 'rgba(108,99,255,0.1)', borderRadius: 12, padding: 14, marginTop: 8 },
   pickedInfoText:  { color: '#C4B5FD', fontSize: 13, marginBottom: 8 },
   pickedInfoChange:{ color: '#6C63FF', fontSize: 13, fontWeight: '600' },
-
-  progressWrap:  { marginTop: 16 },
-  progressLabel: { color: '#A78BFA', fontSize: 13, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
-  progressTrack: { height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
-  progressFill:  { height: '100%', backgroundColor: '#6C63FF', borderRadius: 4 },
 });

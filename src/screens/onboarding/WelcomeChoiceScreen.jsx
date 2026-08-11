@@ -32,7 +32,7 @@ export default function WelcomeChoiceScreen() {
   const [pickedEnvelope, setPickedEnvelope] = useState(null);
   const [password, setPassword] = useState('');
   const [picking, setPicking] = useState(false);
-  const [restoreProgress, setRestoreProgress] = useState(null);
+  const [restoring, setRestoring] = useState(false);
 
   async function handleCreateNew() {
     setCreating(true);
@@ -57,16 +57,16 @@ export default function WelcomeChoiceScreen() {
   }
 
   async function handleRestore() {
-    setRestoreProgress(0);
+    setRestoring(true);
     try {
-      await decryptAndImportBackup(pickedEnvelope, password, setRestoreProgress);
+      await decryptAndImportBackup(pickedEnvelope, password);
     } catch (err) {
       if (err.code === 'wrong_password') {
         Alert.alert('Wrong password', 'That password did not work — try again.');
       } else {
         Alert.alert('Restore failed', err.message);
       }
-      setRestoreProgress(null);
+      setRestoring(false);
     }
   }
 
@@ -133,26 +133,20 @@ export default function WelcomeChoiceScreen() {
               value={password}
               onChangeText={setPassword}
               autoFocus
-              editable={restoreProgress === null}
+              editable={!restoring}
             />
 
-            {restoreProgress !== null ? (
-              <View style={styles.progressWrap}>
-                <Text style={styles.progressLabel}>Decrypting… {Math.round(restoreProgress * 100)}%</Text>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${Math.round(restoreProgress * 100)}%` }]} />
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.primaryBtn}
-                onPress={handleRestore}
-                disabled={password.length === 0}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.primaryBtnText}>Decrypt & Restore</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleRestore}
+              disabled={restoring || password.length === 0}
+              activeOpacity={0.85}
+            >
+              {restoring
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.primaryBtnText}>Decrypt & Restore</Text>
+              }
+            </TouchableOpacity>
           </>
         )}
       </View>

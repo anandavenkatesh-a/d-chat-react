@@ -25,7 +25,7 @@ import { getAllMessagesForBackup, insertContactsBulk, insertMessagesBulk } from 
 import { CURRENT_BACKUP_VERSION, migrateBackup } from './backupMigrations';
 import { encryptWithPassword, decryptWithPassword } from './backupCrypto';
 
-export async function exportBackup({ includeContacts, includeMessages, password, onProgress }) {
+export async function exportBackup({ includeContacts, includeMessages, password }) {
   if (!password || password.length === 0) {
     throw new Error('A password is required to export a backup.');
   }
@@ -47,7 +47,7 @@ export async function exportBackup({ includeContacts, includeMessages, password,
     messages: includeMessages ? await getAllMessagesForBackup() : null,
   };
 
-  const encrypted = await encryptWithPassword(sensitivePayload, password, onProgress);
+  const encrypted = await encryptWithPassword(sensitivePayload, password);
 
   const fileContents = {
     dchatBackup: true,
@@ -104,8 +104,8 @@ export async function pickBackupFile() {
   return envelope;
 }
 
-export async function decryptAndImportBackup(envelope, password, onProgress) {
-  const sensitivePayload = await decryptWithPassword(envelope, password, onProgress);
+export async function decryptAndImportBackup(envelope, password) {
+  const sensitivePayload = await decryptWithPassword(envelope, password);
 
   let backup = {
     backupVersion: envelope.backupVersion,

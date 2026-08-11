@@ -2,20 +2,31 @@
  * useMessagesStore.js
  * Global state for messages per contact + sending logic.
  *
- * ⚠️ FIX: markAsSeen() previously updated the in-memory badge-relevant
- * state ONLY AFTER a sequential await-loop of individual SQLite
- * writes (one per unseen message) had fully completed. If a user read
- * multiple messages and navigated back to the contact list quickly —
- * a completely normal, fast interaction — there was a real window
- * where the in-memory state hadn't been updated yet, so the unread
- * badge stayed stale until that background work eventually finished
- * (which is why it only seemed to clear "the second time" — really,
- * enough time had just passed by then for the delayed update to
- * land). Fixed by updating the in-memory state FIRST, synchronously,
- * before any awaited I/O — the badge now clears the instant
- * markAsSeen() is called, with the SQLite writes and relay
- * notifications happening in the background afterward, in parallel
- * rather than one at a time.
+ * ⚠️ FIX (part 1, previous round): markAsSeen() updates in-memory
+ * state FIRST, synchronously, before any awaited I/O — see that
+ * function's own comment below.
+ *
+ * ⚠️ FIX (part 2, this round — the actual remaining bug): that first
+ * fix created a NEW, subtler race against ContactListScreen's
+ * useFocusEffect, which re-fetches messages fresh from SQLite every
+ * time the screen regains focus (e.g. navigating back from
+ * ChatScreen). If that fresh SQLite read executes BEFORE
+ * markAsSeen()'s background persistence has actually landed on disk
+ * — a completely real possibility, since navigating back is
+ * essentially instant while the SQLite write still takes real time —
+ * the fresh read would overwrite the already-correct in-memory
+ * "seen" state with stale data still showing the old status. Two
+ * individually-correct fixes, colliding at the boundary between them.
+ *
+ * The fix: loadMessages() now MERGES freshly-loaded data with
+ * whatever's already in memory, rather than blindly replacing it.
+ * Message status only ever moves forward — sent → stored → seen,
+ * never backward — so it's always safe to keep whichever status is
+ * further along, regardless of which source (existing in-memory data
+ * vs. a fresh-but-possibly-behind SQLite read) happens to be more
+ * up to date at any given moment. This closes the race by
+ * construction, without needing to block navigation or guess at
+ * timing.
  */
 
 import { create } from 'zustand';
@@ -34,15 +45,44 @@ const DUPLICATE_SEND_WINDOW_MS = 2000;
 let _lastSendKey = null;
 let _lastSendAt = 0;
 
+// Message status only ever advances in this order — never backward.
+const STATUS_RANK = { [MSG_STATUS.SENT]: 0, [MSG_STATUS.STORED]: 1, [MSG_STATUS.SEEN]: 2 };
+
+function isMoreAdvanced(statusA, statusB) {
+  return (STATUS_RANK[statusA] ?? 0) > (STATUS_RANK[statusB] ?? 0);
+}
+
 const useMessagesStore = create((set, get) => ({
   messagesByContact: {},
 
+  /**
+   * Loads messages for a contact from SQLite. Merges with whatever's
+   * already in memory rather than blindly overwriting it — see file
+   * header for why this matters. Safe and correct even when there's
+   * nothing in memory yet (a genuinely fresh load just passes
+   * straight through, since there's nothing to compare against).
+   */
   loadMessages: async (deviceId) => {
-    const messages = await getMessagesForContact(deviceId);
-    set((s) => ({
-      messagesByContact: { ...s.messagesByContact, [deviceId]: messages },
-    }));
+    const freshMessages = await getMessagesForContact(deviceId);
+
+    set((s) => {
+      const existing = s.messagesByContact[deviceId] || [];
+      const existingById = new Map(existing.map((m) => [m.id, m]));
+
+      const merged = freshMessages.map((fresh) => {
+        const existingMsg = existingById.get(fresh.id);
+        if (existingMsg && isMoreAdvanced(existingMsg.status, fresh.status)) {
+          return { ...fresh, status: existingMsg.status };
+        }
+        return fresh;
+      });
+
+      return {
+        messagesByContact: { ...s.messagesByContact, [deviceId]: merged },
+      };
+    });
   },
+
 
   sendMessage: async ({ plaintext, recipientDeviceId, recipientPublicKey, senderPrivateKey }) => {
     const dedupeKey = `${recipientDeviceId}:${plaintext}`;
