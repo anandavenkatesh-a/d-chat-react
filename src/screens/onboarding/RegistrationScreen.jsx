@@ -1,16 +1,45 @@
 /**
  * RegistrationScreen.jsx
  *
- * Instructions stage redesigned: previously a single paragraph with
- * manual '\n' line breaks, which looked scattered and didn't reflow
- * naturally across different screen widths. Replaced with a
- * structured, scannable 3-step layout (icon + short title +
- * description per step) plus a smaller, visually separated privacy
- * footnote — much easier to read at a glance than one dense block of
- * text.
+ * ⚠️ MAJOR FIX — chunk playback rebuilt around a proper queue.
  *
- * Everything else (tap-counter puzzle mechanics, audio playback,
- * auto-submit after the final chunk) is unchanged from before.
+ * Root cause of two related bugs reported on slower devices:
+ *   1. "Sometimes stops producing sound, stays silent, puzzle ends"
+ *   2. "Puzzle ends, then a second later I hear a high-pitched tone"
+ *
+ * Both traced to the same problem: the previous version immediately
+ * destroyed the previous chunk's audio player the instant a NEW
+ * chunk's message arrived. On a fast device, native player creation
+ * is quick enough that each chunk mostly gets to play before the next
+ * one preempts it. On a slower device, if creating/loading a player
+ * takes real time, a chunk could get destroyed BEFORE it ever
+ * produced any sound at all — silence, chunk after chunk if the
+ * slowness persists — and any chunk still "in flight" when the app's
+ * fixed end-of-session timer fired would only start playing audibly
+ * AFTER the app had already decided the puzzle was over.
+ *
+ * Considered fixing this with expo-audio's playbackStatusUpdate /
+ * didJustFinish events to detect real completion before advancing —
+ * but that has multiple OPEN, ANDROID-SPECIFIC reliability issues in
+ * expo-audio itself (completion events firing immediately without
+ * actually playing subsequent tracks, or simply not arriving at all
+ * after a number of plays, both confirmed on real devices). Relying
+ * on that event system would risk trading one silent-audio bug for a
+ * different one, on the exact platform this app targets.
+ *
+ * FIX: a queue paced entirely by setTimeout, using the chunk duration
+ * the relay already tells us (chunk_duration_ms), never depending on
+ * any playback-completion signal from the audio library at all.
+ * Chunks are pushed onto a queue as they arrive rather than
+ * immediately played; a single driver processes the queue one at a
+ * time, giving each chunk its full, guaranteed duration before
+ * advancing — regardless of how quickly messages arrive. On a slow
+ * device, playback may simply run behind the relay's real-time
+ * schedule and the queue will hold a backlog for a while — but no
+ * chunk is ever skipped or cut short. The "submit now" trigger fires
+ * only once the queue is genuinely, fully drained after the final
+ * chunk — not on a fixed timer that assumes real-time playback kept
+ * up with the relay's schedule.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -52,10 +81,34 @@ export default function RegistrationScreen() {
   const playerRef = useRef(null);
   const tapCountRef = useRef(0);
   const hasSubmittedRef = useRef(false);
-  const finalChunkTimerRef = useRef(null);
+  const localQueueDrainedRef = useRef(false);
+  const answerWindowOpenRef = useRef(false);
   const chunkDurationRef = useRef(2000);
 
-  function playChunk(base64Wav) {
+  const audioQueueRef = useRef([]);
+  const isDrainingQueueRef = useRef(false);
+
+  /**
+   * Definitively stops any currently-playing audio AND clears any
+   * remaining backlog in the queue. Needed because the audio queue is
+   * purely local, independent state with no awareness of the overall
+   * registration attempt's lifecycle — without this, if registration
+   * ends (success, failure, OR the overall connection-level timeout)
+   * while chunks are still queued locally (a real possibility on a
+   * slow device, by design — the queue deliberately lets playback run
+   * behind the relay's real-time schedule rather than skip audio),
+   * the queue's own setTimeout-driven loop just keeps running and
+   * playing through its backlog regardless — audibly continuing even
+   * after a failure screen is already showing.
+   */
+  function stopAudioQueue() {
+    audioQueueRef.current = [];
+    isDrainingQueueRef.current = false;
+    playerRef.current?.remove?.();
+    playerRef.current = null;
+  }
+
+  function playChunkAudio(base64Wav) {
     try {
       playerRef.current?.remove?.();
       playerRef.current = createAudioPlayer({ uri: `data:audio/wav;base64,${base64Wav}` });
@@ -66,10 +119,68 @@ export default function RegistrationScreen() {
     }
   }
 
+  function drainQueue() {
+    if (audioQueueRef.current.length === 0) {
+      isDrainingQueueRef.current = false;
+      return;
+    }
+    isDrainingQueueRef.current = true;
+
+    const { index, base64Wav, isFinal } = audioQueueRef.current.shift();
+    playChunkAudio(base64Wav);
+    // THE FIX: progress bar now updates HERE, at the moment a chunk
+    // actually starts playing — not when its message merely arrived
+    // over the network. Those are different moments whenever the
+    // local queue has any backlog, and updating on arrival was
+    // misleadingly showing the bar at 100% while chunks — possibly
+    // including a high tone — were still genuinely unheard. That
+    // mismatch is the likely cause of undercounted taps: seeing the
+    // bar "finish" is a natural cue to stop paying attention.
+    setChunkIndex(index + 1);
+
+    setTimeout(() => {
+      const queueNowEmpty = audioQueueRef.current.length === 0;
+      if (isFinal && queueNowEmpty) {
+        // The local queue has genuinely, fully finished playing —
+        // one of the two required conditions. See maybeSubmit().
+        localQueueDrainedRef.current = true;
+        maybeSubmit();
+      }
+      drainQueue();
+    }, chunkDurationRef.current);
+  }
+
+  function enqueueChunk(index, base64Wav, isFinal) {
+    audioQueueRef.current.push({ index, base64Wav, isFinal });
+    if (!isDrainingQueueRef.current) {
+      drainQueue();
+    }
+  }
+
   function handleTap() {
     tapCountRef.current += 1;
     setTapCount(tapCountRef.current);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }
+
+  /**
+   * The actual gatekeeper: only submits once BOTH the relay says the
+   * answer window is open AND the local audio queue has genuinely,
+   * fully finished playing. Neither signal alone is trustworthy on
+   * its own — the relay's signal arrives in near-real-time over the
+   * network regardless of local processing speed, so on a slow
+   * device it can arrive well before the user has actually heard
+   * (and could tap for) every chunk. Waiting for both closes that
+   * gap: a fast device's queue typically finishes before the relay's
+   * message even arrives, so this fires immediately as before; a
+   * slow device's queue may still be draining when the relay's
+   * message arrives, and submission correctly waits for it to
+   * genuinely finish rather than firing early with an incomplete count.
+   */
+  function maybeSubmit() {
+    if (localQueueDrainedRef.current && answerWindowOpenRef.current) {
+      submitCurrentAnswer();
+    }
   }
 
   function submitCurrentAnswer() {
@@ -87,6 +198,9 @@ export default function RegistrationScreen() {
     setTapCount(0);
     tapCountRef.current = 0;
     hasSubmittedRef.current = false;
+    localQueueDrainedRef.current = false;
+    answerWindowOpenRef.current = false;
+    stopAudioQueue();
 
     const reg = startRegistration({
       onStatusChange: (s) => setStatusText(s),
@@ -98,24 +212,22 @@ export default function RegistrationScreen() {
       },
 
       onChunk: (chunk) => {
-        setChunkIndex(chunk.index + 1);
-        playChunk(chunk.audioBase64);
-
-        if (chunk.isFinal) {
-          finalChunkTimerRef.current = setTimeout(() => {
-            submitCurrentAnswer();
-          }, chunkDurationRef.current);
-        }
+        enqueueChunk(chunk.index, chunk.audioBase64, chunk.isFinal);
       },
 
       onAnswerWindowOpen: () => {
-        submitCurrentAnswer();
+        answerWindowOpenRef.current = true;
+        maybeSubmit();
       },
     });
     regRef.current = reg;
 
     reg.result.then(async (result) => {
-      if (finalChunkTimerRef.current) clearTimeout(finalChunkTimerRef.current);
+      // THE FIX: stop any still-playing/queued audio the instant
+      // registration concludes, whatever the outcome — see
+      // stopAudioQueue()'s comment for why this doesn't happen
+      // automatically otherwise.
+      stopAudioQueue();
 
       if (result.success) {
         setStage(STAGE_SUCCESS);
@@ -129,8 +241,7 @@ export default function RegistrationScreen() {
 
   useEffect(() => {
     return () => {
-      if (finalChunkTimerRef.current) clearTimeout(finalChunkTimerRef.current);
-      playerRef.current?.remove?.();
+      stopAudioQueue();
     };
   }, []);
 
@@ -224,7 +335,11 @@ export default function RegistrationScreen() {
             <>
               <Text style={styles.failIcon}>✕</Text>
               <Text style={styles.failText}>
-                {failReason === 'puzzle_failed'
+                {failReason === 'wrong_count'
+                  ? "That wasn't quite right — let's try again."
+                  : failReason === 'too_late'
+                  ? "That took a bit too long — let's try again."
+                  : failReason === 'puzzle_failed' // older relay builds without the split reason
                   ? "That wasn't quite right — let's try again."
                   : 'Something went wrong. Please try again.'}
               </Text>

@@ -2,21 +2,7 @@
  * registration.js
  * Handles the one-time registration flow: opens its own short-lived
  * Tor-routed WebSocket connection, proves identity ownership, then
- * plays a single streamed audio-discrimination puzzle — tones arrive
- * one at a time over ~60 seconds, and the user has 5 seconds after
- * the last tone to submit how many were "high" pitched.
- *
- * Usage from a UI component:
- *
- *   const reg = startRegistration({
- *     onSessionStart: (totalChunks) => { ... },
- *     onChunk: (chunk) => { ... play the audio chunk immediately, back-to-back ... },
- *     onAnswerWindowOpen: (deadlineMs) => { ... show count input + countdown ... },
- *     onStatusChange: (status) => { ... },
- *   });
- *
- *   reg.submitAnswer(count);   // call when the user submits their count
- *   const outcome = await reg.result;  // { success: boolean, reason?: string }
+ * plays a single streamed audio-discrimination puzzle.
  */
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
@@ -27,7 +13,8 @@ import useIdentityStore from '../store/useIdentityStore';
 
 const { TorWebSocketModule } = NativeModules;
 
-const CONNECTION_TIMEOUT_MS = 90_000;
+const CONNECTION_TIMEOUT_MS = 150_000;
+const PING_INTERVAL_SECONDS = 30;
 
 let _activeRegistration = null;
 
@@ -210,7 +197,7 @@ function _startRegistrationInternal({ onSessionStart, onChunk, onAnswerWindowOpe
     }, CONNECTION_TIMEOUT_MS);
 
     try {
-      await TorWebSocketModule.connect(RELAY_WS_URL, socksPort);
+      await TorWebSocketModule.connect(RELAY_WS_URL, socksPort, PING_INTERVAL_SECONDS);
       console.log('[Register] TorWebSocketModule.connect() dispatched — waiting for TorWS_open/error/close…');
     } catch (err) {
       console.warn('[Register] TorWebSocketModule.connect() threw synchronously:', err.message);

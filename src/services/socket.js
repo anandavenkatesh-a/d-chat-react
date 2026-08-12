@@ -1,24 +1,15 @@
 /**
  * socket.js
  * Singleton WebSocket connection to the relay server — routed through
- * Tor, now with cryptographic identity proof on every connect.
+ * Tor, with cryptographic identity proof on every connect.
  *
- * Handshake, per connection:
- *   1. Relay sends { type: "challenge", nonce } immediately on open
- *   2. This module signs that nonce with the signing private key and
- *      replies with { type: "connect", device_id, signing_public_key,
- *      encryption_public_key, nonce, signature }
- *   3. Relay verifies the signature, confirms the device is
- *      registered, checks the rate limit, and only then responds
- *      { type: "connected" }
- *
- * This connection assumes registration has ALREADY completed — see
- * registration.js for the one-time register + puzzle flow that must
- * happen first. If the relay responds with
- * { type: "error", reason: "not_registered" }, something is wrong
- * with the app's own state (this shouldn't be reachable through
- * normal UI flow, since App.js gates the main app behind
- * isRegistered).
+ * ⚠️ Uses TorWebSocketModule.connect(url, socksPort, pingIntervalSeconds).
+ * The native module's signature now requires this third argument (see
+ * TorWebSocketModule.java) — 45s is appropriate here since this is
+ * the persistent, mostly-idle chat connection, which benefits from
+ * relatively fast dead-connection detection. The registration
+ * connection (registration.js) uses 0 (disabled) instead, for
+ * different reasons specific to that connection's sustained data load.
  */
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
@@ -26,8 +17,11 @@ import { RELAY_WS_URL } from '../constants/config';
 import { startTor, getSocksPort } from './tor';
 import { signNonce } from '../crypto/signingKeyPair';
 import useConnectionStore from '../store/useConnectionStore';
+import useIdentityStore from '../store/useIdentityStore';
 
 const { TorWebSocketModule } = NativeModules;
+
+const PING_INTERVAL_SECONDS = 30;
 
 const _state = (globalThis.__dchatSocketState ??= {
   isOpen: false,
@@ -51,12 +45,6 @@ function _setConnectionStatus(status) {
   useConnectionStore.getState().setStatus(status);
 }
 
-/**
- * @param {object} identity - { deviceId, signingPublicKey, signingPrivateKey, encryptionPublicKey }
- * @param {function} onEvent - called with every parsed incoming event
- *   (challenge/connected/error are handled internally and NOT passed
- *   through to onEvent — only actual chat protocol events are)
- */
 export async function connect(identity, onEvent) {
   if (_state.isOpen) {
     console.log('[WS] connect() called but already connected — ignoring');
@@ -117,13 +105,6 @@ export function disconnect() {
     TorWebSocketModule.close();
   }
   _state.isOpen = false;
-  // A deliberate disconnect means "start over" — the exponential
-  // backoff counter belongs to a chain of failed *retry* attempts,
-  // not to a fresh, intentional reconnect (e.g. returning to the
-  // foreground). Without this reset, a foreground-triggered reconnect
-  // could inherit a multi-second backoff delay left over from before
-  // the app was backgrounded, even though logically it's attempt #1
-  // of a brand new sequence.
   _state.retryCount = 0;
   _setConnectionStatus('disconnected');
 }
@@ -146,8 +127,6 @@ export function isConnected() {
   return _state.isOpen;
 }
 
-// ── Internals ─────────────────────────────────────────────────────────────────
-
 function _setupEmitterOnce() {
   if (_state.emitter) return;
 
@@ -155,10 +134,6 @@ function _setupEmitterOnce() {
 
   _state.emitter.addListener('TorWS_open', () => {
     console.log('[WS] Transport open — waiting for challenge…');
-    // NOT marking isOpen/connected yet — that only happens once the
-    // relay confirms { type: "connected" } after the full identity
-    // proof handshake succeeds. Until then we're transport-connected
-    // but not authenticated.
   });
 
   _state.emitter.addListener('TorWS_message', ({ data }) => {
@@ -190,9 +165,6 @@ function _setupEmitterOnce() {
         _state.isConnecting = false;
         _state.retryCount = 0;
         _setConnectionStatus('connected');
-
-        // pull_acks is a normal chat-protocol message, not part of the
-        // identity handshake — send it through the usual send() path.
         send({ type: 'pull_acks', device_id: _state.deviceId });
         break;
       }
@@ -202,12 +174,11 @@ function _setupEmitterOnce() {
         _state.isOpen = false;
         _state.isConnecting = false;
         _setConnectionStatus('disconnected');
-        // 'not_registered' specifically should not normally be
-        // reachable — App.js gates the main app behind isRegistered.
-        // If seen, it likely means local state got out of sync with
-        // the relay (e.g. relay registry was reset) — don't just spin
-        // reconnecting forever in that specific case.
-        if (parsed.reason !== 'not_registered') {
+
+        if (parsed.reason === 'not_registered') {
+          console.warn('[WS] Identity not recognized by relay — routing back through registration.');
+          useIdentityStore.getState().resetRegistration();
+        } else {
           _scheduleReconnect();
         }
         break;
@@ -223,9 +194,6 @@ function _setupEmitterOnce() {
       }
 
       default:
-        // Everything else (message/ack_sent/ack_stored/ack_seen/
-        // ack_queued/pending_acks) is normal chat protocol — hand off
-        // to the app's own message router.
         if (_state.onMessageCallback) _state.onMessageCallback(parsed);
     }
   });
@@ -264,7 +232,7 @@ async function _connect() {
 
   try {
     _state.isConnecting = true;
-    await TorWebSocketModule.connect(RELAY_WS_URL, socksPort);
+    await TorWebSocketModule.connect(RELAY_WS_URL, socksPort, PING_INTERVAL_SECONDS);
   } catch (err) {
     console.error('[WS] Failed to start WebSocket connection:', err.message);
     _state.isConnecting = false;

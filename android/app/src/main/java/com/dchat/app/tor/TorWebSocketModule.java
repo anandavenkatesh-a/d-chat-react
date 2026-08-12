@@ -23,6 +23,24 @@ package com.dchat.app.tor;
  * Only ONE connection is supported at a time, matching the app's existing
  * singleton socket.js design (one persistent connection to the relay).
  *
+ * ⚠️ PING INTERVAL — history:
+ * Originally 8 seconds, chosen for fast dead-connection detection. This
+ * turned out to be too aggressive specifically for .onion hidden-service
+ * connections: those route through a 6-hop circuit (3 hops from the
+ * client to a rendezvous point, 3 more from the relay to that same
+ * point), which is inherently higher-latency and more variable than a
+ * typical clearnet Tor circuit. A real, observed failure: "sent ping
+ * but didn't receive pong within 8000ms (after 0 successful
+ * ping/pongs)" — even a single, tiny ping/pong round trip couldn't
+ * complete in 8s on a momentarily slow circuit, which OkHttp then
+ * (incorrectly) treated as a dead connection. The cost of a false
+ * positive here is real: this fires most easily during the puzzle
+ * streaming phase, where killing the connection throws away the
+ * entire in-progress attempt, forcing a full restart. Increased to
+ * 45s — meaningfully more tolerant of real Tor latency variance, at
+ * the cost of being somewhat slower to detect a GENUINELY dead
+ * connection, which is the right trade-off here.
+ *
  * ⚠️ GENERATION TRACKING — why this exists:
  * socket.js sometimes needs to abandon an in-flight connection attempt
  * and immediately start a new one (e.g. the app returning to the
@@ -36,7 +54,7 @@ package com.dchat.app.tor;
  * tell "this close event is about the OLD, already-abandoned attempt"
  * apart from "this close event is about my BRAND NEW attempt" — a
  * stale event could prematurely kill a fresh, otherwise-healthy
- * connection. Every callback below now checks it's still describing
+ * connection. Every callback below checks it's still describing
  * the CURRENT connection generation before emitting anything to JS;
  * stale events from a superseded attempt are silently dropped here,
  * at the source, rather than confusing the JS layer.
@@ -69,6 +87,35 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
     private static final String TAG = "TorWebSocketModule";
     private static final int NORMAL_CLOSURE = 1000;
 
+    // Ping/pong keepalive is now per-connection (see connect()'s new
+    // pingIntervalSeconds parameter) rather than one shared constant.
+    // Reasoning: the PERSISTENT CHAT connection (socket.js) benefits
+    // from a relatively short interval — it's mostly idle, so fast
+    // dead-connection detection is valuable there. The REGISTRATION
+    // connection (registration.js) is fundamentally different: it
+    // carries a continuous, heavy stream of real data (puzzle audio
+    // chunks) for 60+ seconds over Tor, which already has higher and
+    // more variable latency than a normal connection even without
+    // extra load. A synthetic ping frame can get queued behind larger
+    // data frames, or a normal Tor circuit latency spike can exceed
+    // too tight a timeout — producing a false "connection dead"
+    // positive on a connection that was actually fine, just
+    // momentarily busy.
+    //
+    // ⚠️ registration.js originally passed 0 here (fully disabling
+    // ping/pong), reasoning the puzzle's own data stream was liveness
+    // enough on its own, and the 150s ceiling timeout in
+    // registration.js was an adequate backstop. That missed the other
+    // half of the tradeoff: with NO ping/pong at all, neither side
+    // can detect a connection that genuinely, silently dies mid-
+    // stream (a real, not-rare occurrence on Tor) — confirmed in
+    // practice, where a stalled session just hung for the full 150s
+    // ceiling instead of failing within a reasonable window.
+    // registration.js now passes 30 instead — a middle ground, far
+    // more generous than the original 8s that caused false positives,
+    // while still providing real, timely detection of an actually-
+    // dead connection well before the ceiling timeout.
+
     private static boolean isReservedCloseCode(int code) {
         return code == 1005 || code == 1006 || code < 1000 || (code >= 1004 && code <= 1006);
     }
@@ -77,12 +124,6 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
     private OkHttpClient client;
     private WebSocket webSocket;
 
-    // Incremented every time connect() starts a genuinely new attempt.
-    // Each WebSocketListener instance captures the generation value
-    // that was current AT THE MOMENT IT WAS CREATED, and compares
-    // against this field on every callback — if they no longer match,
-    // a newer connect() has since superseded this one, and the event
-    // is stale and gets dropped.
     private final AtomicInteger currentGeneration = new AtomicInteger(0);
 
     public TorWebSocketModule(ReactApplicationContext context) {
@@ -105,12 +146,10 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void connect(String url, int socksPort, Promise promise) {
+    public void connect(String url, int socksPort, int pingIntervalSeconds, Promise promise) {
         try {
             closeInternal(NORMAL_CLOSURE, "Reconnecting");
 
-            // This attempt's own generation number, fixed at creation
-            // time — every callback below closes over this exact value.
             final int myGeneration = currentGeneration.incrementAndGet();
 
             Proxy socksProxy = new Proxy(
@@ -122,7 +161,7 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
                 .proxy(socksProxy)
                 .connectTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.MILLISECONDS)
-                .pingInterval(8, TimeUnit.SECONDS)
+                .pingInterval(pingIntervalSeconds, TimeUnit.SECONDS)
                 .build();
 
             Request request = new Request.Builder()
@@ -132,7 +171,6 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
 
             webSocket = client.newWebSocket(request, new WebSocketListener() {
 
-                /** True if a NEWER connect() has since superseded this attempt. */
                 private boolean isStale() {
                     return currentGeneration.get() != myGeneration;
                 }
@@ -172,7 +210,7 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
 
                 @Override
                 public void onClosed(@NonNull WebSocket ws, int code, @NonNull String reason) {
-                    if (isStale()) return; // this is the critical check — see file header
+                    if (isStale()) return;
                     WritableMap params = new WritableNativeMap();
                     params.putInt("code", code);
                     params.putString("reason", reason);
@@ -181,7 +219,7 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
 
                 @Override
                 public void onFailure(@NonNull WebSocket ws, @NonNull Throwable t, Response response) {
-                    if (isStale()) return; // same — a failure on an abandoned attempt isn't news
+                    if (isStale()) return;
                     String exceptionClass = t.getClass().getName();
                     String rawMessage = t.getMessage() != null ? t.getMessage() : "(no message)";
                     String httpStatus = response != null ? (" | HTTP status: " + response.code()) : "";
@@ -215,9 +253,6 @@ public class TorWebSocketModule extends ReactContextBaseJavaModule {
     }
 
     private void closeInternal(int code, String reason) {
-        // Bump the generation here too — an explicit close() should
-        // also invalidate any in-flight listener callbacks for the
-        // connection being closed, not just a fresh connect() call.
         currentGeneration.incrementAndGet();
 
         if (webSocket != null) {
