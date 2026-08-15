@@ -51,3 +51,8 @@ ios/Pods/
 ios/build/
 ios/*.xcworkspace/xcuserdata/
 ios/*.xcodeproj/xcuserdata/
+
+# Release signing - never commit these
+android/keystore.properties
+android/app/*.keystore
+*.jks
